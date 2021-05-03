@@ -1,9 +1,9 @@
 '''
 ***********************************************************************************************************************
-*                                   Building height extractor tool                                                    *
+*                                           Functions file                                                            *
 *                                         Created by P.Nezval                                                         *
 *                                             version 0.1                                                             *
-*                                             March 2021                                                              *
+*                                               May 2021                                                              *
 ***********************************************************************************************************************
                                                 License:
                                     Mozilla Public License Version 2.0
@@ -11,9 +11,19 @@
 '''
 
 import json
+import geopandas
+import pandas
+
 
 ######################################################################################################################
 
+def read_json(input_data):
+    file = json.load(input_data)
+    return file
+
+def read_geopandas(input_data):
+    shp = geopandas.read_file(input_data)
+    return shp
 
 def get_obj_ids(input_data):
     city_obj_id = []
@@ -53,7 +63,7 @@ def get_build_height(vert_list, heights):
     return height
 
 
-def print_build_height(input_data, oid):
+def print_build_height(input_data, oid, out_json):
     out = {}
     out['buildings'] = []
     j = 0
@@ -66,19 +76,23 @@ def print_build_height(input_data, oid):
         x = {k: {'fid': i, 'height': build_height}}
         out['buildings'].append(x)
         j = j + 1
-    with open('/home/petnez9/Documents/Master_Thesis/practical/data/building_heights.json', 'w') as outfile:
+    with open(out_json, 'w') as outfile:
         json.dump(out, outfile)
     return out
 
+def create_attr_table(input_data):
+    fids = []
+    heights = []
+    for i in range(len(input_data['buildings'])):
+        nm = 'property_{}'.format(i)
+        fids.append(input_data['buildings'][i][nm]['fid'])
+        heights.append(input_data['buildings'][i][nm]['height'])
+    dat = {'fid': fids, 'height': heights}
+    updated = pandas.DataFrame(dat)
+    return updated
 
-def main(path):
-    with open(path) as file:
-        data = json.load(file)
-        file.close()
-    obj_id = get_obj_ids(data)
-    result = print_build_height(data, obj_id)
 
-
-if __name__ == "__main__":
-    json_file = "/home/petnez9/Documents/Master_Thesis/practical/data/study_area.json"
-    main(json_file)
+def updateSHP(shape,attr):
+    updated = attr.merge(shape, on='fid')
+    gdf = geopandas.GeoDataFrame(updated, geometry=updated.geometry)
+    return gdf
