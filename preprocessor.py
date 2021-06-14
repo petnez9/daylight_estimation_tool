@@ -19,9 +19,7 @@ import pre_processor.functions as fun
 ######################################################################################################################
 
 def main(input_json, output_json, input_shp, output):
-    with open(input_json) as file:
-        data = fun.read_json(file)
-        file.close()
+    data = fun.read_json(input_json)
     obj_id = fun.get_obj_ids(data)
     result = fun.print_build_height(data, obj_id, output_json)
     shp = fun.read_geopandas(input_shp)

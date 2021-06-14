@@ -18,8 +18,9 @@ import pandas
 ######################################################################################################################
 
 def read_json(input_data):
-    file = json.load(input_data)
-    return file
+    with open(input_data) as file:
+        data = json.load(file)
+    return data
 
 def read_geopandas(input_data):
     shp = geopandas.read_file(input_data)
