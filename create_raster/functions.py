@@ -14,31 +14,18 @@ import os
 from shapely.geometry import Polygon, Point, LineString
 
 
-def extract_footprints(data, key):
-    building = data['CityObjects'][key]
-    bound_list = building['geometry'][0]['boundaries'][0]
-    foot_vertex_list = get_footprint_vertex_list(bound_list, data)
-    coordinates = []
-    for vertex in foot_vertex_list:
-        coordinates.append(data['vertices'][vertex][0:2])
-    return coordinates
+def extract_footprints(obj_id, shapefile):
+    i = 0
+    coords = []
+    while len(coords) == 0:
+        if shapefile.fid[i] == obj_id:
+            x,y = shapefile.exterior[i].xy
+            j = 0
+            for j in range(len(x)):
+                coords.append([x[j], y[j]])
+        i += 1
+    return coords
 
-
-
-def get_footprint_vertex_list(building_bound, input_data):
-    footprints_ver = []
-    min_sum = 9999999
-    for polygon in building_bound:
-        sum_height = 0
-        n = 0
-        for vertex in polygon[0]:
-            n += 1
-            sum_height += input_data['vertices'][vertex][2]
-        sum_height = sum_height/n
-        if sum_height < min_sum:
-            min_sum = sum_height
-            footprints_ver = polygon[0]
-    return footprints_ver
 
 class InitialRaster():
 
@@ -147,32 +134,45 @@ class BuildingObject():
         else:
             return True
 
+
+    def checkCorner(self, list, poly):
+        for voxel in list:
+            
+
+
     def assignWallIndex(self, voxel_list):
         build_voxel_list = []
         for voxel in voxel_list:
             if voxel.building_index == self.building_id:
                 build_voxel_list.append(voxel)
+        build_shape = self.footprints
         #print('The building id is: {a} and number of voxels for this building is: {b}'.format(a=self.building_id, b=len(build_voxel_list)))
         for wall in self.wall_list:
             line = LineString([Point(wall['wall_start'][0], wall['wall_start'][1]), Point(wall['wall_end'][0], wall['wall_end'][1])])
-            line = line.buffer(1.5)
-            for voxel in build_voxel_list:
-                p1 = Point(voxel.coord_x,voxel.coord_y)
-                if p1.within(line):
-                    #print('The voxel row_id is: {a}; col_id is: {b} and is located nearby the following wall: {c}'.format(
-                        #a=voxel.row_index, b=voxel.col_index, c=wall['wall_id']))
-                    start = [wall['wall_start'][0], wall['wall_start'][1]]
-                    end = [wall['wall_end'][0], wall['wall_end'][1]]
-                    point = [voxel.coord_x, voxel.coord_y]
-                    if self.correctSide(start, end, point):
-                        #print('The voxel row_id is: {a}; col_id is: {b} represents the following wall: {c}'.format(
-                                #a=voxel.row_index, b=voxel.col_index, c=wall['wall_id']))
+            if line.length > 0.5:
+                buff_length = 2
+                left = line.parallel_offset(buff_length / 2, 'left')
+                right = line.parallel_offset(buff_length / 2, 'right')
+                p1 = left.boundary[1]
+                p2 = right.boundary[0]
+                p3 = right.boundary[1]
+                p4 = left.boundary[0]
+                poly_buffer = Polygon([p1, p2, p3, p4, p1])
+                for voxel in build_voxel_list:
+                    p1 = Point(voxel.coord_x, voxel.coord_y)
+                    if p1.within(poly_buffer):
                         voxel.wall_index = wall['wall_id']
-                        '''if len(voxel.wall_index) > 1:
-                            if p1.within(Point(wall['wall_start'][0], wall['wall_start'][1]).buffer(1.5)):
-                                voxel.wall_start_corner = True
-                            elif p1.within(Point(wall['wall_end'][0], wall['wall_end'][1]).buffer(1.5)):
-                                voxel.wall_end_corner = True'''
+                        '''start = [wall['wall_start'][0], wall['wall_start'][1]]
+                        point = [voxel.coord_x, voxel.coord_y]
+                        if self.correctSide(start, end, point):
+                            #print('The voxel row_id is: {a}; col_id is: {b} represents the following wall: {c}'.format(
+                                    #a=voxel.row_index, b=voxel.col_index, c=wall['wall_id']))
+                            #voxel.wall_index = wall['wall_id']
+                            if len(voxel.wall_index) > 1:
+                                if p1.within(Point(wall['wall_start'][0], wall['wall_start'][1]).buffer(1.5)):
+                                    voxel.wall_start_corner = True
+                                elif p1.within(Point(wall['wall_end'][0], wall['wall_end'][1]).buffer(1.5)):
+                                    voxel.wall_end_corner = True'''
 
 
 class WallRasterObject():

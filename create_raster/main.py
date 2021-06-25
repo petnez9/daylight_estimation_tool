@@ -16,7 +16,9 @@ from rasterio.plot import show
 from create_raster import functions as crfun
 from pre_processor import functions as pfun
 from shapely.geometry import Polygon, Point, LineString
+import geopandas as gpd
 
+shapefile_foot = gpd.read_file("data/foot_print_simplified.shp")
 img = rasterio.open('data/Energyyearroof.tif')
 ini_rast = crfun.InitialRaster(img)
 #show(img)
@@ -40,17 +42,13 @@ for voxel_entry in wallFile.file_data:
 build_obj_list = []
 i = 0
 for key in obj_id:
-    x = crfun.extract_footprints(data, key)
-    c_obj = data['CityObjects'][key]
-    ver_list = pfun.get_vertex_list(c_obj)
-    ver_heights = pfun.vertex_heights(data)
-    build_height = pfun.get_build_height(ver_list, ver_heights)
-    i += 1
-    building = crfun.BuildingObject(key, i, x, build_height)
+    x = crfun.extract_footprints(key,shapefile_foot)
+    building = crfun.BuildingObject(key, i, x, shapefile_foot.height[i])
     building.getWallList()
     building.assignBuildingIndex(voxels)
     building.assignWallIndex(voxels)
     build_obj_list.append(building)
+    i += 1
 
 
 
@@ -108,20 +106,24 @@ for building in build_obj_list:
 import pandas
 import geopandas
 
-outfp = 'data/voxel_wall_id_all.shp'
+outfp = 'data/voxel_wall_id_all3.shp'
 
 y = []
 x = []
 id = []
 bid = []
+vid = []
 for voxel in voxels:
-    if voxel.wall_index != 999:
-        x.append(voxel.coord_x)
-        y.append(voxel.coord_y)
-        id.append(voxel.wall_index)
-        bid.append(voxel.building_index)
+    #if voxel.wall_index != 999:
+    x.append(voxel.coord_x)
+    y.append(voxel.coord_y)
+    id.append(voxel.wall_index)
+    bid.append(voxel.building_index)
+    vid.append(voxel.voxel_id)
 
 
-df = pandas.DataFrame({'id':id, 'bid':bid, 'x':x, 'y':y})
+df = pandas.DataFrame({'id':id, 'bid':bid, 'vid':vid, 'x':x, 'y':y})
 gdf = geopandas.GeoDataFrame(df, geometry=geopandas.points_from_xy(df.x, df.y))
 gdf.to_file(outfp)
+
+
