@@ -17,6 +17,7 @@ from create_raster import functions as crfun
 from pre_processor import functions as pfun
 from shapely.geometry import Polygon, Point, LineString
 import geopandas as gpd
+import matplotlib.pyplot as plt
 
 shapefile_foot = gpd.read_file("data/foot_print_simplified.shp")
 img = rasterio.open('data/Energyyearroof.tif')
@@ -42,59 +43,16 @@ for voxel_entry in wallFile.file_data:
 build_obj_list = []
 i = 0
 for key in obj_id:
-    x = crfun.extract_footprints(key,shapefile_foot)
+    x = crfun.extract_footprints(key, shapefile_foot)
     building = crfun.BuildingObject(key, i, x, shapefile_foot.height[i])
     building.getWallList()
     building.assignBuildingIndex(voxels)
-    building.assignWallIndex(voxels)
+    building.createCornerAreas()
+    building.assignWallIndex()
+    building.setVoxelCorners()
     build_obj_list.append(building)
     i += 1
 
-
-
-'''
-budova = build_obj_list[4]
-voxel_list1 = []
-for voxel in voxels:
-    if voxel.building_index == budova.building_id:
-        voxel_list1.append(voxel)
-
-stena = budova.wall_list[1]
-line = LineString([Point(stena['wall_start'][0], stena['wall_start'][1]), Point(stena['wall_end'][0], stena['wall_end'][1])])
-line = line.buffer(1.5)
-vox_close_wall = []
-for voxel in voxel_list1:
-    p1 = Point(voxel.coord_x, voxel.coord_y)
-    if p1.within(line):
-        vox_close_wall.append(voxel)
-
-start = [stena['wall_start'][0], stena['wall_start'][1]]
-end = [stena['wall_end'][0], stena['wall_end'][1]]
-
-correct_vox = []
-for voxel in vox_close_wall:
-    point = [voxel.coord_x, voxel.coord_y]
-    if budova.correctSide(start, end, point):
-        correct_vox.append(voxel)
-        voxel.wall_index = stena['wall_id']
-
-import pandas
-import geopandas
-
-outfp = 'data/voxel_wall_id6.shp'
-
-y = []
-x = []
-id = []
-for voxel in voxel_list1:
-    #if voxel.building_index == 'none':
-    x.append(voxel.coord_x)
-    y.append(voxel.coord_y)
-    id.append(voxel.wall_index)
-
-df = pandas.DataFrame({'id':id, 'x':x, 'y':y})
-gdf = geopandas.GeoDataFrame(df, geometry=geopandas.points_from_xy(df.x, df.y))
-gdf.to_file(outfp)
 
 
 '''
@@ -102,11 +60,12 @@ gdf.to_file(outfp)
 for building in build_obj_list:
     building.assignWallIndex(voxels)
 
+'''
 
 import pandas
 import geopandas
 
-outfp = 'data/voxel_wall_id_all3.shp'
+outfp = 'data/voxel_wall_id_all7.shp'
 
 y = []
 x = []
@@ -114,16 +73,36 @@ id = []
 bid = []
 vid = []
 for voxel in voxels:
-    #if voxel.wall_index != 999:
-    x.append(voxel.coord_x)
-    y.append(voxel.coord_y)
-    id.append(voxel.wall_index)
-    bid.append(voxel.building_index)
-    vid.append(voxel.voxel_id)
+    if voxel.wall_start_corner or voxel.wall_end_corner:
+        x.append(voxel.coord_x)
+        y.append(voxel.coord_y)
+        id.append(voxel.wall_index)
+        bid.append(voxel.building_index)
+        vid.append(voxel.voxel_id)
 
 
 df = pandas.DataFrame({'id':id, 'bid':bid, 'vid':vid, 'x':x, 'y':y})
-gdf = geopandas.GeoDataFrame(df, geometry=geopandas.points_from_xy(df.x, df.y))
+crs = {'init': 'epsg:3008'}
+gdf = geopandas.GeoDataFrame(df,geometry=geopandas.points_from_xy(df.x, df.y))
 gdf.to_file(outfp)
 
+outfp = 'data/corner_areas2.shp'
+
+y = []
+x = []
+id = []
+bid = []
+vid = []
+for building in build_obj_list:
+    i = 0
+    for geom in building.corner_area.geoms:
+        id.append(i)
+        bid.append(building.building_id)
+        x, y = geom.exterior.xy
+        vid.append(Polygon(zip(x,y)))
+        i += 1
+
+df = pandas.DataFrame({'id':id, 'bid':bid})
+gdf = geopandas.GeoDataFrame(df, geometry=vid)
+gdf.to_file(outfp)
 
