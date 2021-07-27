@@ -3,16 +3,16 @@
 *                                Functions file for create raster module                                              *
 *                                         Created by P.Nezval                                                         *
 *                                             version 0.1                                                             *
-*                                               May 2021                                                              *
+*                                         May 2021 - July 2021                                                        *
 ***********************************************************************************************************************
                                                 License:
                                     Mozilla Public License Version 2.0
                                     ==================================
 '''
-
+import math
 import os
 from shapely.geometry import Polygon, Point, LineString, MultiPolygon
-
+import numpy as np
 
 def extract_footprints(obj_id, shapefile):
     i = 0
@@ -26,11 +26,10 @@ def extract_footprints(obj_id, shapefile):
         i += 1
     return coords
 
-def create_buffer(point1, point2):
+def create_buffer(point1, point2, buff_len):
     line = LineString([Point(point1[0], point1[1]), Point(point2[0], point2[1])])
-    buff_length = 2.4
-    left = line.parallel_offset(buff_length / 2, 'left')
-    right = line.parallel_offset(buff_length / 2, 'right')
+    left = line.parallel_offset(buff_len / 2, 'left')
+    right = line.parallel_offset(buff_len / 2, 'right')
     p1 = left.boundary[1]
     p2 = right.boundary[0]
     p3 = right.boundary[1]
@@ -38,7 +37,11 @@ def create_buffer(point1, point2):
     return Polygon([p1, p2, p3, p4, p1])
 
 
-class InitialRaster():
+def my_fun(e):
+    return e['distance']
+
+
+class InitialRaster:
 
     def __init__(self, input_raster):
         self.top = input_raster.bounds.top
@@ -49,7 +52,7 @@ class InitialRaster():
         self.CRS = 'EPSG:3008'
 
 
-class VoxelObject():
+class VoxelObject:
 
     def __init__(self, col_index, row_index, voxel_data, id):
         self.voxel_id = id
@@ -66,7 +69,7 @@ class VoxelObject():
         self.coord_y = init_raster.top - self.row_index * init_raster.resolution[1] + init_raster.resolution[1] / 2
 
 
-class WallDataObject():
+class WallDataObject:
 
     def __init__(self, path):
         self.path = path
@@ -83,7 +86,7 @@ class WallDataObject():
                 self.file_data.append({'row': int(line[0]), 'column': int(line[1]), 'data': irr_data})
 
 
-class BuildingObject():
+class BuildingObject:
 
     def __init__(self, fid, bid, foot, height):
         self.fid = fid
@@ -95,6 +98,7 @@ class BuildingObject():
         self.corner_area = 0
         self.corner_list = []
         self.wall_lines = []
+        self.windows_geometry = []
 
     def assignBuildingIndex(self, voxels):
         pointList = []
@@ -115,7 +119,7 @@ class BuildingObject():
             wall_start = self.footprints[i]
             wall_end = self.footprints[i + 1]
             wall_id = i
-            wall_list.append({'wall_id': wall_id, 'wall_start': wall_start, 'wall_end': wall_end, 'wall_buffer': create_buffer(wall_start, wall_end)})
+            wall_list.append({'wall_id': wall_id, 'wall_start': wall_start, 'wall_end': wall_end, 'wall_buffer': create_buffer(wall_start, wall_end, 3)})
             self.corner_list.append(Point(wall_start[0], wall_start[1]))
             self.wall_lines.append(LineString([Point(wall_start[0], wall_start[1]), Point(wall_end[0], wall_end[1])]))
         self.wall_list = wall_list
@@ -265,17 +269,194 @@ class BuildingObject():
                     voxel.wall_end_corner = True
 
 
-class WallRasterObject():
 
-    def __init__(self, bid, wall_index, coord_x_sta, coord_y_sta, coord_x_end, coord_y_end, height):
+class WallRasterObject:
+
+    def __init__(self, bid, wall_index, start, end, height):
         self.build_index = bid
         self.wall_index = wall_index
-        self.left = coord_x_sta, coord_y_sta
-        self.right = coord_x_end, coord_y_end
-        self.data = []
+        self.start = start
+        self.end = end
+        self.voxelList = []
         self.height = height
         self.spatial_reference = {}
+        self.columns = 0
+        self.rows = 0
+        self.resolution = 1
+        self.grid = 0
 
     def getRasterDimension(self):
-        a = 0
+        start = Point(self.start)
+        end = Point(self.end)
+        dim = start.distance(end)
+        self.columns = round(dim)
+        self.rows = round(self.height)
+        self.grid = np.zeros([self.rows, self.columns])
+
+    def getWallVoxelList(self, building):
+        selected = []
+        for voxel in building.build_voxel_list:
+            if voxel.wall_index == self.wall_index:
+                selected.append(voxel)
+        self.voxelList = selected
+
+    def checkQuadrant(self):
+        x_diff = self.end[0] - self.start[0]
+        y_diff = self.end[1] - self.start[1]
+        if x_diff > 0 and y_diff > 0:
+            return "Q1"
+        elif x_diff < 0 and y_diff > 0:
+            return "Q2"
+        elif x_diff < 0 and y_diff < 0:
+            return "Q3"
+        elif x_diff > 0 and y_diff < 0:
+            return "Q4"
+
+    def calculateLineCoords(self):
+        for voxel in self.voxelList:
+            quadrant = self.checkQuadrant()
+            if quadrant == "Q1":
+                main_dir = math.atan((self.end[1]-self.start[1])/(self.end[0]-self.start[0]))
+                alpha = main_dir - math.atan((voxel.coord_y - self.start[1]) / (voxel.coord_x - self.start[0]))
+                start = Point(self.start)
+                p1 = Point([voxel.coord_x, voxel.coord_y])
+                distance = start.distance(p1)
+                new_distance = distance * math.cos(alpha)
+                delta_xp1 = new_distance * math.cos(main_dir)
+                delta_yp1 = new_distance * math.sin(main_dir)
+                voxel.coord_x = self.start[0] + delta_xp1
+                voxel.coord_y = self.start[1] + delta_yp1
+            elif quadrant == "Q2":
+                main_dir = math.pi - math.atan((self.end[1]-self.start[1])/(self.end[0]-self.start[0]))
+                alpha = main_dir - (math.pi - math.atan((voxel.coord_y - self.start[1]) / (voxel.coord_x - self.start[0])))
+                start = Point(self.start)
+                p1 = Point([voxel.coord_x, voxel.coord_y])
+                distance = start.distance(p1)
+                new_distance = distance * math.cos(alpha)
+                delta_xp1 = new_distance * math.cos(main_dir)
+                delta_yp1 = new_distance * math.sin(main_dir)
+                voxel.coord_x = self.start[0] - abs(delta_xp1)
+                voxel.coord_y = self.start[1] + abs(delta_yp1)
+            elif quadrant == "Q3":
+                main_dir = math.atan((self.end[1]-self.start[1])/(self.end[0]-self.start[0]))
+                alpha = main_dir - math.atan((voxel.coord_y - self.start[1]) / (voxel.coord_x - self.start[0]))
+                start = Point(self.start)
+                p1 = Point([voxel.coord_x, voxel.coord_y])
+                distance = start.distance(p1)
+                new_distance = distance * math.cos(alpha)
+                delta_xp1 = new_distance * math.cos(main_dir)
+                delta_yp1 = new_distance * math.sin(main_dir)
+                voxel.coord_x = self.start[0] - delta_xp1
+                voxel.coord_y = self.start[1] - delta_yp1
+            elif quadrant == "Q4":
+                main_dir = 2*math.pi - math.atan((self.end[1] - self.start[1]) / (self.end[0] - self.start[0]))
+                alpha = main_dir - (2 * math.pi - math.atan((voxel.coord_y - self.start[1]) / (voxel.coord_x - self.start[0])))
+                start = Point(self.start)
+                p1 = Point([voxel.coord_x, voxel.coord_y])
+                distance = start.distance(p1)
+                new_distance = distance * math.cos(alpha)
+                delta_xp1 = new_distance * math.cos(main_dir)
+                delta_yp1 = new_distance * math.sin(main_dir)
+                voxel.coord_x = self.start[0] + delta_xp1
+                voxel.coord_y = self.start[1] - delta_yp1
+
+    def find_free_spot_up(self, i, list):
+        while i in list:
+            i = i + 1
+        return i
+
+    def sort_dist_list(self):
+        dist_list = []
+        start = Point(self.start)
+        for voxel in self.voxelList:
+            voxel_loc = Point([voxel.coord_x, voxel.coord_y])
+            d = start.distance(voxel_loc)
+            x = {'distance': d, 'data': voxel.voxel_data}
+            dist_list.append(x)
+        dist_list.sort(key=my_fun)
+        return dist_list
+
+    def adjust_position(self, dist_list):
+        check_list = []
+        new_dist_list = []
+        for i in range(len(dist_list)):
+            d = round(dist_list[i]['distance'])
+            if d in check_list:
+                d = self.find_free_spot_up(d, check_list)
+            if d <= self.columns - 1:
+                x = {'distance': d, 'data': dist_list[i]['data']}
+                new_dist_list.append(x)
+                check_list.append(d)
+        return new_dist_list
+
+    def populate_vertical_values(self, voxel_data, d):
+        if len(voxel_data) == self.rows:
+            for i in range(len(voxel_data)):
+                self.grid[len(voxel_data) - 1 - i][d] = voxel_data[i]
+        elif len(voxel_data) < self.rows:
+            diff = self.rows - len(voxel_data)
+            for i in range(len(voxel_data)):
+                self.grid[len(voxel_data) - diff - i][d] = voxel_data[i]
+        elif len(voxel_data) > self.rows:
+            diff = len(voxel_data) - self.rows
+            voxel_data = voxel_data[diff:]
+            for i in range(len(voxel_data)):
+                self.grid[len(voxel_data) - 1 - i][d] = voxel_data[i]
+
+
+    def populateGrid(self):
+        if len(self.voxelList) == self.columns:
+            dist_list = self.sort_dist_list()
+            for i in range(len(dist_list)):
+                self.populate_vertical_values(dist_list[i]['data'], i)
+        elif len(self.voxelList) < self.columns:
+            dist_list = self.sort_dist_list()
+            dist_list = self.adjust_position(dist_list)
+            for i in range(len(dist_list)):
+                self.populate_vertical_values(dist_list[i]['data'], dist_list[i]['distance'])
+
+
+    def create_foating_window(self, i, j, size):
+        n = round(size/2)
+        if i < n and j < n:
+            slice = np.array(self.grid[:(i + n), :(j + n)])
+            return slice
+        elif i >= self.rows - n and j >= self.columns - n:
+            slice = np.array(self.grid[(i - int(n / 2)):, (j - int(n / 2)):])
+            return slice
+        elif i < n and j >= n:
+            slice = np.array(self.grid[:(i + n), (j - int(n/2)):(j + n)])
+            return slice
+        elif i >= n and j < n:
+            slice = np.array(self.grid[(i - int(n/2)):(i + n), :(j + n)])
+            return slice
+        elif i >= self.rows - n and j < self.columns - n:
+            slice = np.array(self.grid[(i - int(n / 2)):, (j - int(n / 2)):(j + n)])
+            return slice
+        elif i < self.rows - n and j >= self.columns - n:
+            slice = np.array(self.grid[(i - int(n / 2)):(i + n), (j - int(n / 2)):])
+            return slice
+        else:
+            slice = np.array(self.grid[(i - int(n/2)):(i + n), (j - int(n/2)):(j + n)])
+            return slice
+
+    def getMeanValue(self, submat):
+        non_zero = []
+        for x in submat:
+            [non_zero.append(x) for x in x if x > 0]
+        np_arr = np.array(non_zero)
+        if not np_arr.any():
+            return 0
+        else:
+            return np_arr.mean()
+
+    def interpolate(self):
+        for i in range(self.rows):
+            for j in range(self.columns):
+                if self.grid[i][j] == 0:
+                    submat = self.create_foating_window(i, j, 3)
+                    self.grid[i][j] = self.getMeanValue(submat)
+
+    def storeRasterObject(self):
+        pass
 
