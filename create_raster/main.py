@@ -29,13 +29,13 @@ js_path = 'data/study_area.json'
 data = pfun.read_json(js_path)
 obj_id = pfun.get_obj_ids(data)
 
-wallFile = crfun.WallDataObject(path)
-wallFile.processInput()
+facadeFile = crfun.FacadeData(path)
+facadeFile.processInput()
 
 voxels = []
 i = 0
-for voxel_entry in wallFile.file_data:
-    voxel = crfun.VoxelObject(voxel_entry['column'], voxel_entry['row'], voxel_entry['data'], i)
+for voxel_entry in facadeFile.file_data:
+    voxel = crfun.Voxel(voxel_entry['column'], voxel_entry['row'], voxel_entry['data'], i)
     voxel.defineCoordinates(ini_rast)
     i += 1
     voxels.append(voxel)
@@ -43,25 +43,41 @@ for voxel_entry in wallFile.file_data:
 build_obj_list = []
 i = 0
 for key in obj_id:
-    x = crfun.extract_footprints(key, shapefile_foot)
-    building = crfun.BuildingObject(key, i, x, round(shapefile_foot.height[i]))
-    building.getWallList()
+    building = crfun.Building(key, i, crfun.extract_footprints(key, shapefile_foot), int(shapefile_foot.height[i]))
+    building.getFacadeList()
     building.assignBuildingIndex(voxels)
     building.createCornerAreas()
-    building.assignWallIndex()
-    building.setVoxelCorners()
+    building.assignFacadeIndex()
+    win_geom = wfun.get_win_from_json(data['CityObjects'][key], data)
+    for facade in building.facade_list:
+        facadeRaster = crfun.FacadeRaster(building.fid, building.building_height, facade.start, facade.end, facade.facade_index)
+        facadeRaster.getRasterDimension()
+        facadeRaster.getFacadeVoxelList(building)
+        facade.facade_voxel_list = facadeRaster.voxelList
+        facadeRaster.calculateLineCoords()
+        facadeRaster.populateGrid()
+        facadeRaster.interpolate()
+        facade.facade_raster = facadeRaster.grid
+    j = 0
+    for window in win_geom:
+        win_obj = wfun.Window(window, key, j)
+        for facade in building.facade_list:
+            win_obj.set_extent(facade)
+            facade_win_buff = crfun.create_buffer(facade.start, facade.end, 1.5)
+            win_obj.assign_facade(facade, facade_win_buff)
+            if win_obj not in building.windows_geometry:
+                building.windows_geometry.append(win_obj)
+        j += 1
+    for facade in building.facade_list:
+        facade.getFacadeWindows(building)
+        facade.createFacadeWindowRaster()
     build_obj_list.append(building)
     i += 1
 
-wall_rasters = []
+facade_list = []
 for building in build_obj_list:
-    for wall in building.wall_list:
-        wallRaster = crfun.WallRasterObject(building.building_id, wall['wall_id'], wall['wall_start'], wall['wall_end'], building.building_height)
-        wallRaster.getRasterDimension()
-        wallRaster.getWallVoxelList(building)
-        wallRaster.calculateLineCoords()
-        wall_rasters.append(wallRaster)
-
+    for facade in building.facade_list:
+        facade_list.append(facade)
 
 '''
 for building in build_obj_list:
@@ -83,7 +99,7 @@ for voxel in voxels:
     #if voxel.wall_start_corner or voxel.wall_end_corner:
         x.append(voxel.coord_x)
         y.append(voxel.coord_y)
-        id.append(voxel.wall_index)
+        id.append(voxel.facade_index)
         bid.append(voxel.building_index)
         vid.append(voxel.voxel_id)
 
