@@ -26,8 +26,9 @@ def extract_footprints(obj_id, shapefile):
         i += 1
     return coords
 
+
 def create_buffer(point1, point2, buff_len):
-    line = LineString([Point(point1[0], point1[1]), Point(point2[0], point2[1])])
+    line = LineString([Point(point1), Point(point2)])
     left = line.parallel_offset(buff_len / 2, 'left')
     right = line.parallel_offset(buff_len / 2, 'right')
     p1 = left.boundary[1]
@@ -52,7 +53,7 @@ class InitialRaster:
         self.CRS = 'EPSG:3008'
 
 
-class VoxelObject:
+class Voxel:
 
     def __init__(self, col_index, row_index, voxel_data, id):
         self.voxel_id = id
@@ -60,16 +61,16 @@ class VoxelObject:
         self.row_index = row_index
         self.voxel_data = voxel_data
         self.building_index = 'none'
-        self.wall_index = 999
-        self.wall_start_corner = False
-        self.wall_end_corner = False
+        self.facade_index = 999
+        self.facade_start_corner = False
+        self.facade_end_corner = False
 
     def defineCoordinates(self, init_raster):
         self.coord_x = init_raster.left + self.col_index * init_raster.resolution[0] - init_raster.resolution[0] / 2
         self.coord_y = init_raster.top - self.row_index * init_raster.resolution[1] + init_raster.resolution[1] / 2
 
 
-class WallDataObject:
+class FacadeData:
 
     def __init__(self, path):
         self.path = path
@@ -78,27 +79,59 @@ class WallDataObject:
 
     def processInput(self):
         with open(self.path) as f:
-            wallData = f.readlines()[1:]
-            for line in wallData:
+            facadeData = f.readlines()[1:]
+            for line in facadeData:
                 line = line.split(' ')
                 line = [x for x in line if x]
                 irr_data = [float(x) for x in line[2:-1] if float(x) > 0]
                 self.file_data.append({'row': int(line[0]), 'column': int(line[1]), 'data': irr_data})
 
+class Facade:
 
-class BuildingObject:
+    def __init__(self, fid, height, start, end, fac_id):
+        self.feature_id = fid
+        self.facade_index = fac_id
+        self.start = start
+        self.end = end
+        self.facade_buffer = create_buffer(start, end, 3)
+        self.height = height
+        self.lineString = LineString([Point(start), Point(end)])
+        self.facade_voxel_list = []
+        self.facade_windows = []
+        self.facade_raster = []
+        self.facade_windows_raster = []
+
+    def getFacadeWindows(self, building):
+        for window in building.windows_geometry:
+            if window.facade_id == self.facade_index:
+                self.facade_windows.append(window)
+
+    def createFacadeWindowRaster(self):
+        raster_window = np.zeros(list(self.facade_raster.shape))
+        for window in self.facade_windows:
+            p1 = Point(self.start)
+            p2 = Point(window.win_start_xy)
+            j = round(p1.distance(p2))
+            i = self.height - window.win_height_top
+            n = round(window.width)
+            raster_window[i:i + window.height, j:j + n] = 1
+        self.facade_windows_raster = raster_window
+
+
+class Building:
 
     def __init__(self, fid, bid, foot, height):
         self.fid = fid
         self.building_id = bid
         self.footprints = foot
         self.building_height = height
-        self.wall_list = []
+        self.facade_list = []
         self.build_voxel_list = []
         self.corner_area = 0
         self.corner_list = []
-        self.wall_lines = []
+        self.facade_lines = []
         self.windows_geometry = []
+        self.raster_list = []
 
     def assignBuildingIndex(self, voxels):
         pointList = []
@@ -113,16 +146,16 @@ class BuildingObject:
                 voxel.building_index = self.building_id
                 self.build_voxel_list.append(voxel)
 
-    def getWallList(self):
-        wall_list = []
+    def getFacadeList(self):
+        facade_list = []
         for i in range(len(self.footprints)-1):
-            wall_start = self.footprints[i]
-            wall_end = self.footprints[i + 1]
-            wall_id = i
-            wall_list.append({'wall_id': wall_id, 'wall_start': wall_start, 'wall_end': wall_end, 'wall_buffer': create_buffer(wall_start, wall_end, 3)})
-            self.corner_list.append(Point(wall_start[0], wall_start[1]))
-            self.wall_lines.append(LineString([Point(wall_start[0], wall_start[1]), Point(wall_end[0], wall_end[1])]))
-        self.wall_list = wall_list
+            facade_start = self.footprints[i]
+            facade_end = self.footprints[i + 1]
+            facade_id = i
+            facade_list.append(Facade(self.fid, self.building_height, facade_start, facade_end, facade_id))
+            self.corner_list.append(Point(facade_start[0], facade_start[1]))
+            self.facade_lines.append(LineString([Point(facade_start), Point(facade_end)]))
+        self.facade_list = facade_list
 
     def checkSide(self, x, y, z):
         # first two points are coords of a line and third point is actually the evaluated point
@@ -158,24 +191,24 @@ class BuildingObject:
 
     def createCornerAreas(self):
         corner_list = []
-        for i in range(len(self.wall_list)):
-            if i < len(self.wall_list) - 1:
-                if self.checkSide(self.wall_list[i]['wall_start'], self.wall_list[i]['wall_end'], self.wall_list[i+1]['wall_end']):
-                    corner = Point(self.wall_list[i]['wall_end'][0], self.wall_list[i]['wall_end'][1])
-                    corner_area = self.createConvexCornerArea(self.wall_list[i]['wall_buffer'], self.wall_list[i+1]['wall_buffer'], corner)
+        for i in range(len(self.facade_list)):
+            if i < len(self.facade_list) - 1:
+                if self.checkSide(self.facade_list[i].start, self.facade_list[i].end, self.facade_list[i + 1].end):
+                    corner = Point(self.facade_list[i].end[0], self.facade_list[i].end[1])
+                    corner_area = self.createConvexCornerArea(self.facade_list[i].facade_buffer, self.facade_list[i + 1].facade_buffer, corner)
                     corner_list.append(corner_area)
                 else:
-                    corner = Point(self.wall_list[i]['wall_end'][0], self.wall_list[i]['wall_end'][1])
-                    corner_area = self.createConcaveCornerArea(self.wall_list[i]['wall_buffer'], self.wall_list[i+1]['wall_buffer'], corner)
+                    corner = Point(self.facade_list[i].end[0], self.facade_list[i].end[1])
+                    corner_area = self.createConcaveCornerArea(self.facade_list[i].facade_buffer, self.facade_list[i + 1].facade_buffer, corner)
                     corner_list.append(corner_area)
             else:
-                if self.checkSide(self.wall_list[i]['wall_start'], self.wall_list[i]['wall_end'], self.wall_list[0]['wall_end']):
-                    corner = Point(self.wall_list[i]['wall_end'][0], self.wall_list[i]['wall_end'][1])
-                    corner_area = self.createConvexCornerArea(self.wall_list[i]['wall_buffer'], self.wall_list[0]['wall_buffer'], corner)
+                if self.checkSide(self.facade_list[i].start, self.facade_list[i].end, self.facade_list[0].end):
+                    corner = Point(self.facade_list[i].end[0], self.facade_list[i].end[1])
+                    corner_area = self.createConvexCornerArea(self.facade_list[i].facade_buffer, self.facade_list[0].facade_buffer, corner)
                     corner_list.append(corner_area)
                 else:
-                    corner = Point(self.wall_list[i]['wall_end'][0], self.wall_list[i]['wall_end'][1])
-                    corner_area = self.createConcaveCornerArea(self.wall_list[i]['wall_buffer'], self.wall_list[0]['wall_buffer'], corner)
+                    corner = Point(self.facade_list[i].end[0], self.facade_list[i].end[1])
+                    corner_area = self.createConcaveCornerArea(self.facade_list[i].facade_buffer, self.facade_list[0].facade_buffer, corner)
                     corner_list.append(corner_area)
         try:
             corner_area_merged = MultiPolygon(corner_list)
@@ -189,9 +222,9 @@ class BuildingObject:
             self.corner_area = corner_list
             print("An exception occurred - corner area is represented by list of polygons instead of multipolygon")
 
-    def assignWallIndex(self):
+    def assignFacadeIndex(self):
         corner_points = []
-        for wall in self.wall_list:
+        for facade in self.facade_list:
             for voxel in self.build_voxel_list:
                 p1 = Point(voxel.coord_x, voxel.coord_y)
                 if isinstance(self.corner_area, list):
@@ -200,15 +233,15 @@ class BuildingObject:
                             if voxel not in corner_points:
                                 corner_points.append(voxel)
                         else:
-                            if p1.within(wall['wall_buffer']):
-                                voxel.wall_index = wall['wall_id']
+                            if p1.within(facade.facade_buffer):
+                                voxel.facade_index = facade.facade_index
                 else:
                     if p1.within(self.corner_area):
                         if voxel not in corner_points:
                             corner_points.append(voxel)
                     else:
-                        if p1.within(wall['wall_buffer']):
-                            voxel.wall_index = wall['wall_id']
+                        if p1.within(facade.facade_buffer):
+                            voxel.facade_index = facade.facade_index
         self.resolveCorners(corner_points)
 
     def resolveCorners(self, list):
@@ -224,61 +257,56 @@ class BuildingObject:
                     assigned_corner = i
                 i += 1
             if assigned_corner == 0:
-                dist1 = p1.distance(self.wall_lines[assigned_corner])
-                dist2 = p1.distance(self.wall_lines[-1])
+                dist1 = p1.distance(self.facade_lines[assigned_corner])
+                dist2 = p1.distance(self.facade_lines[-1])
                 if dist1 < dist2:
-                    voxel.wall_index = assigned_corner
+                    voxel.facade_index = assigned_corner
                 else:
-                    voxel.wall_index = len(self.wall_lines) - 1
+                    voxel.facade_index = len(self.facade_lines) - 1
             else:
-                dist1 = p1.distance(self.wall_lines[assigned_corner])
-                dist2 = p1.distance(self.wall_lines[assigned_corner - 1])
+                dist1 = p1.distance(self.facade_lines[assigned_corner])
+                dist2 = p1.distance(self.facade_lines[assigned_corner - 1])
                 if dist1 < dist2:
-                    voxel.wall_index = assigned_corner
+                    voxel.facade_index = assigned_corner
                 else:
-                    voxel.wall_index = assigned_corner - 1
+                    voxel.facade_index = assigned_corner - 1
 
     def getWallVoxelList(self, i):
-        selected= []
+        selected = []
         for voxel in self.build_voxel_list:
-            if voxel.wall_index == i:
+            if voxel.facade_index == i:
                 selected.append(voxel)
         return selected
 
     def setVoxelCorners(self):
-        for i in range(len(self.wall_list)):
-            wall_voxels = self.getWallVoxelList(i)
+        for i in range(len(self.facade_list)):
+            facade_voxels = self.getWallVoxelList(i)
             start_v = 0
             end_v = 0
             start_dis = 999
             end_dis = 999
-            for voxel in wall_voxels:
+            for voxel in facade_voxels:
                 p1 = Point(voxel.coord_x, voxel.coord_y)
-                dist1 = p1.distance(Point(self.wall_list[i]['wall_start']))
-                dist2 = p1.distance(Point(self.wall_list[i]['wall_end']))
+                dist1 = p1.distance(Point(self.facade_list[i].start))
+                dist2 = p1.distance(Point(self.facade_list[i].end))
                 if dist1 < start_dis:
                     start_dis = dist1
                     start_v = voxel.voxel_id
                 if dist2 < end_dis:
                     end_dis = dist2
                     end_v = voxel.voxel_id
-            for voxel in wall_voxels:
+            for voxel in facade_voxels:
                 if voxel.voxel_id == start_v:
-                    voxel.wall_start_corner = True
+                    voxel.facade_start_corner = True
                 elif voxel.voxel_id == end_v:
-                    voxel.wall_end_corner = True
+                    voxel.facade_end_corner = True
 
 
+class FacadeRaster(Facade):
 
-class WallRasterObject:
-
-    def __init__(self, bid, wall_index, start, end, height):
-        self.build_index = bid
-        self.wall_index = wall_index
-        self.start = start
-        self.end = end
+    def __init__(self, fid, height, start, end, fac_id):
+        Facade.__init__(self, fid, height, start, end, fac_id)
         self.voxelList = []
-        self.height = height
         self.spatial_reference = {}
         self.columns = 0
         self.rows = 0
@@ -293,10 +321,10 @@ class WallRasterObject:
         self.rows = round(self.height)
         self.grid = np.zeros([self.rows, self.columns])
 
-    def getWallVoxelList(self, building):
+    def getFacadeVoxelList(self, building):
         selected = []
         for voxel in building.build_voxel_list:
-            if voxel.wall_index == self.wall_index:
+            if voxel.facade_index == self.facade_index:
                 selected.append(voxel)
         self.voxelList = selected
 

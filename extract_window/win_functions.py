@@ -32,7 +32,7 @@ def get_all_vertices_list(data):
         vertex.append(x)
     return vertex
 
-def extract_footprints(data, key):
+def extract_footprints_own(data, key):
     building = data['CityObjects'][key]
     bound_list = building['geometry'][0]['boundaries'][0]
     foot_vertex_list = get_footprint_vertex_list(bound_list, data)
@@ -113,54 +113,33 @@ class Window:
         self.id = id
         self.width = 0
         self.height = 0
-        self.edge1 = 0
-        self.edge2 = 0
-        self.wall_id = None
+        self.win_start_xy = [0,0]
+        self.win_end_xy = 0
+        self.win_height_top = 0
+        self.facade_id = None
         self.valid = False
 
-    def check_win_geom_validity(self):
-        x = len(self.geometry)
-        if x != 4 and x != 2:
-            print('Window {a} is invalid'.format(a=self.id))
-            print(x)
-        else:
-            self.valid = True
+    def set_extent(self, facade):
+        i = 0
+        z_min = 999
+        z_max = 0
+        self.win_end_xy = facade.start
+        for geo_dict in self.geometry:
+            x,y,z = geo_dict['ver_coords']
+            if Point(facade.start).distance(Point([x,y])) < Point(facade.start).distance(Point(self.win_start_xy)):
+                self.win_start_xy = [x,y]
+            if Point(facade.start).distance(Point([x,y])) > Point(facade.start).distance(Point(self.win_end_xy)):
+                self.win_end_xy = [x,y]
+            if z > z_max:
+                z_max = z
+            if z < z_min:
+                z_min = z
+        self.width = Point(self.win_start_xy).distance(Point(self.win_end_xy))
+        self.height = z_max - z_min
+        self.win_height_top = z_max
+        self.valid = True
 
-    def set_extent(self):
-        self.check_win_geom_validity()
+    def assign_facade(self, facade, buffer):
         if self.valid:
-            if len(self.geometry) == 4:
-                x1 = self.geometry[0]['ver_coords'][0]
-                x2 = self.geometry[2]['ver_coords'][0]
-                y1 = self.geometry[0]['ver_coords'][1]
-                y2 = self.geometry[2]['ver_coords'][1]
-                z1 = self.geometry[0]['ver_coords'][2]
-                z2 = self.geometry[2]['ver_coords'][2]
-                p1 = Point([x1, y1])
-                p2 = Point([x2, y2])
-                a = round(p1.distance(p2))
-                b = abs(z1 - z2)
-            elif len(self.geometry) == 2:
-                x1 = self.geometry[0]['ver_coords'][0]
-                x2 = self.geometry[1]['ver_coords'][0]
-                y1 = self.geometry[0]['ver_coords'][1]
-                y2 = self.geometry[1]['ver_coords'][1]
-                z1 = self.geometry[0]['ver_coords'][2]
-                z2 = self.geometry[1]['ver_coords'][2]
-                p1 = Point([x1, y1])
-                p2 = Point([x2, y2])
-                a = round(p1.distance(p2))
-                b = abs(z1 - z2)
-            if a*b > 0:
-                self.width = round(p1.distance(p2))
-                self.height = abs(z1 - z2)
-                self.edge1 = [x1, y1]
-                self.edge2 = [x2, y2]
-            else:
-                self.valid = False
-
-    def assign_wall(self, wall, buffer):
-        if self.valid:
-            if Point(self.edge1).within(buffer) and Point(self.edge2).within(buffer):
-                self.wall_id = wall['wall_id']
-                print('Window {a} is has been assigned to wall id {b}'.format(a=self.id, b=self.wall_id))
+            if Point(self.win_start_xy).within(buffer) and Point(self.win_end_xy).within(buffer):
+                self.facade_id = facade.facade_index
