@@ -18,16 +18,6 @@ import pre_processor.functions as fun
 
 ######################################################################################################################
 
-def main(input_json, output_json, input_shp, output):
-    data = fun.read_json(input_json)
-    obj_id = fun.get_obj_ids(data)
-    result = fun.print_build_height(data, obj_id, output_json)
-    shp = fun.read_geopandas(input_shp)
-    attr = fun.create_attr_table(result)
-    shape = fun.updateSHP(shp, attr)
-    shape.to_file(output)
-
-
 if __name__ == "__main__":
 
     arg = sys.argv[1:]
@@ -39,7 +29,7 @@ if __name__ == "__main__":
               '<path_to_original_shapefile>.shp <path_to_output_shapefile>.shp')
     else:
         if len(arg) == 4:
-            main(arg[0], arg[1], arg[2], arg[3])
+            fun.main(arg[0], arg[1], arg[2], arg[3])
         else:
             print('You have entered incorrect number of arguments.\n'
                   'Please use <script_name>.py --help to see the format of input.')
