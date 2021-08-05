@@ -345,7 +345,7 @@ class FacadeRaster(Facade):
             quadrant = self.checkQuadrant()
             if quadrant == "Q1":
                 main_dir = math.atan((self.end[1]-self.start[1])/(self.end[0]-self.start[0]))
-                alpha = main_dir - math.atan((voxel.coord_y - self.start[1]) / (voxel.coord_x - self.start[0]))
+                alpha = math.atan((voxel.coord_y - self.start[1]) / (voxel.coord_x - self.start[0])) - main_dir
                 start = Point(self.start)
                 p1 = Point([voxel.coord_x, voxel.coord_y])
                 distance = start.distance(p1)
@@ -487,4 +487,5 @@ class FacadeRaster(Facade):
 
     def storeRasterObject(self):
         pass
+
 

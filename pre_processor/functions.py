@@ -97,3 +97,13 @@ def updateSHP(shape,attr):
     updated = attr.merge(shape, on='fid')
     gdf = geopandas.GeoDataFrame(updated, geometry=updated.geometry)
     return gdf
+
+
+def main(input_json, output_json, input_shp, output):
+    data = read_json(input_json)
+    obj_id = get_obj_ids(data)
+    result = print_build_height(data, obj_id, output_json)
+    shp = read_geopandas(input_shp)
+    attr = create_attr_table(result)
+    shape = updateSHP(shp, attr)
+    shape.to_file(output)

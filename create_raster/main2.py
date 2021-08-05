@@ -63,7 +63,7 @@ for key in obj_id:
         win_obj = wfun.Window(window, key, j)
         for facade in building.facade_list:
             win_obj.set_extent(facade)
-            facade_win_buff = crfun.create_buffer(facade.start, facade.end, 1.5)
+            facade_win_buff = crfun.create_buffer(facade.start, facade.end, 1)
             win_obj.assign_facade(facade, facade_win_buff)
             if win_obj not in building.windows_geometry:
                 building.windows_geometry.append(win_obj)
