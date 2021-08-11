@@ -12,6 +12,7 @@
 
 import os
 import rasterio
+from rasterio import mask
 from create_raster import functions as crfun
 from pre_processor import functions as pfun
 from extract_window import win_functions as wfun

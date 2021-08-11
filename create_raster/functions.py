@@ -11,6 +11,8 @@
 '''
 import math
 import os
+from itertools import chain
+from rasterio import mask
 from shapely.geometry import Polygon, Point, LineString, MultiPolygon
 import numpy as np
 
@@ -26,6 +28,48 @@ def extract_footprints(obj_id, shapefile):
         i += 1
     return coords
 
+
+def get_roof_id(semantics):
+    for i in range(len(semantics['surfaces'])):
+        if semantics['surfaces'][i]['type'] == 'RoofSurface':
+            return i
+
+
+def get_roof_bound_id(id, val):
+    ids = []
+    for i in range(len(val)):
+        if val[i] == id:
+            ids.append(i)
+    return ids
+
+
+def get_roof_geom(ids, bound):
+    geom = []
+    for i in range(len(bound)):
+        if i in ids:
+            geom.append(bound[i][0])
+    return geom
+
+def get_all_vertices_list(data):
+    vertex = []
+    for i in range(len(data['vertices'])):
+        x = {'ver_id':i, 'ver_coords':data['vertices'][i]}
+        vertex.append(x)
+    return vertex
+
+def assign_ver_coords(roof_geom, ver_list):
+    val_list = []
+    for dict in ver_list:
+        x = list(dict.values())[0]
+        val_list.append(x)
+    win_geom_list = []
+    for obj in roof_geom:
+        win_coord_list = []
+        for vertex in obj:
+            position = val_list.index(vertex)
+            win_coord_list.append(ver_list[position])
+        win_geom_list.append(win_coord_list)
+    return win_geom_list
 
 def create_buffer(point1, point2, buff_len):
     line = LineString([Point(point1), Point(point2)])
@@ -301,6 +345,50 @@ class Building:
                 elif voxel.voxel_id == end_v:
                     voxel.facade_end_corner = True
 
+class Roof:
+    def __init__(self, fid):
+        self.feature_index = fid
+        self.roof_geometry = Polygon()
+        self.total_irradiance = 0
+        self.roof_type = 0
+        self.roof_raw_geometry = 0
+
+    def getRoofRawGeometry(self, building, city_model):
+        semantics = building['geometry'][0]['semantics']
+        id = get_roof_id(semantics)
+        roof_b_ids = get_roof_bound_id(id, semantics['values'][0])
+        geom = get_roof_geom(roof_b_ids, building['geometry'][0]['boundaries'][0])
+        ver_list = get_all_vertices_list(city_model)
+        roof_geom_list = assign_ver_coords(geom, ver_list)
+        self.roof_raw_geometry = roof_geom_list
+
+    def getRoofPolygon(self):
+        if len(self.roof_raw_geometry) == 1:
+            roof_g_list = self.roof_raw_geometry[0]
+            poly_list = []
+            for edge in roof_g_list:
+                poly_list.append(edge['ver_coords'])
+            poly_list.append(poly_list[0])
+            self.roof_geometry = [Polygon(poly_list)]
+        else:
+            poly = []
+            for roof_feature in self.roof_raw_geometry:
+                poly_list = []
+                for edge in roof_feature:
+                    poly_list.append(edge['ver_coords'])
+                poly_list.append(poly_list[0])
+                poly.append(Polygon(poly_list))
+            self.roof_geometry = poly
+
+    def extractRoofIrradiance(self, raster):
+        raster_mask = mask.mask(raster, self.roof_geometry, crop=True)
+        raster_values = []
+        for i in range(len(raster_mask[0][0])):
+            raster_values.append([x for x in raster_mask[0][0][i] if x > 0])
+        raster_values = [x for x in raster_values if x]
+        raster_values = list(chain(*raster_values))
+        self.total_irradiance = sum(raster_values)
+
 
 class FacadeRaster(Facade):
 
@@ -487,5 +575,3 @@ class FacadeRaster(Facade):
 
     def storeRasterObject(self):
         pass
-
-
