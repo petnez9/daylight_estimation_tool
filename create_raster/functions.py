@@ -575,3 +575,16 @@ class FacadeRaster(Facade):
 
     def storeRasterObject(self):
         pass
+
+class OutputCityJSON:
+
+    def __init__(self, data):
+        self.metadata = {"geographicalExtent": [], "referenceSystem": 0}
+        self.type = "CityJSON"
+        self.version = "1.0"
+        self.cityObjects = {}
+
+    def printOut(self):
+        json_out = {"type": self.type, "version": self.version, "metadata": self.metadata}
+
+
