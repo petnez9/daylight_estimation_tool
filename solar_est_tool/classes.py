@@ -1,89 +1,23 @@
 '''
 ***********************************************************************************************************************
-*                                Functions file for create raster module                                              *
+*                                Classes file for solar estimation tool                                               *
 *                                         Created by P.Nezval                                                         *
 *                                             version 0.1                                                             *
-*                                         May 2021 - July 2021                                                        *
+*                                         May 2021 - August 2021                                                      *
 ***********************************************************************************************************************
                                                 License:
-                                    Mozilla Public License Version 2.0
+                                               MIT License
                                     ==================================
 '''
-import math
+
+
 import os
+import math
 from itertools import chain
 from rasterio import mask
 from shapely.geometry import Polygon, Point, LineString, MultiPolygon
 import numpy as np
-
-def extract_footprints(obj_id, shapefile):
-    i = 0
-    coords = []
-    while len(coords) == 0:
-        if shapefile.fid[i] == obj_id:
-            x, y = shapefile.exterior[i].xy
-            j = 0
-            for j in range(len(x)):
-                coords.append([x[j], y[j]])
-        i += 1
-    return coords
-
-
-def get_roof_id(semantics):
-    for i in range(len(semantics['surfaces'])):
-        if semantics['surfaces'][i]['type'] == 'RoofSurface':
-            return i
-
-
-def get_roof_bound_id(id, val):
-    ids = []
-    for i in range(len(val)):
-        if val[i] == id:
-            ids.append(i)
-    return ids
-
-
-def get_roof_geom(ids, bound):
-    geom = []
-    for i in range(len(bound)):
-        if i in ids:
-            geom.append(bound[i][0])
-    return geom
-
-def get_all_vertices_list(data):
-    vertex = []
-    for i in range(len(data['vertices'])):
-        x = {'ver_id':i, 'ver_coords':data['vertices'][i]}
-        vertex.append(x)
-    return vertex
-
-def assign_ver_coords(roof_geom, ver_list):
-    val_list = []
-    for dict in ver_list:
-        x = list(dict.values())[0]
-        val_list.append(x)
-    win_geom_list = []
-    for obj in roof_geom:
-        win_coord_list = []
-        for vertex in obj:
-            position = val_list.index(vertex)
-            win_coord_list.append(ver_list[position])
-        win_geom_list.append(win_coord_list)
-    return win_geom_list
-
-def create_buffer(point1, point2, buff_len):
-    line = LineString([Point(point1), Point(point2)])
-    left = line.parallel_offset(buff_len / 2, 'left')
-    right = line.parallel_offset(buff_len / 2, 'right')
-    p1 = left.boundary[1]
-    p2 = right.boundary[0]
-    p3 = right.boundary[1]
-    p4 = left.boundary[0]
-    return Polygon([p1, p2, p3, p4, p1])
-
-
-def my_fun(e):
-    return e['distance']
+from solar_est_tool import functions as fun
 
 
 class InitialRaster:
@@ -130,6 +64,7 @@ class FacadeData:
                 irr_data = [float(x) for x in line[2:-1] if float(x) > 0]
                 self.file_data.append({'row': int(line[0]), 'column': int(line[1]), 'data': irr_data})
 
+
 class Facade:
 
     def __init__(self, fid, height, start, end, fac_id):
@@ -137,29 +72,34 @@ class Facade:
         self.facade_index = fac_id
         self.start = start
         self.end = end
-        self.facade_buffer = create_buffer(start, end, 3)
+        self.facade_buffer = fun.create_buffer(start, end, 3)
         self.height = height
         self.lineString = LineString([Point(start), Point(end)])
         self.facade_voxel_list = []
         self.facade_windows = []
         self.facade_raster = []
-        self.facade_windows_raster = []
+
 
     def getFacadeWindows(self, building):
         for window in building.windows_geometry:
             if window.facade_id == self.facade_index:
                 self.facade_windows.append(window)
 
-    def createFacadeWindowRaster(self):
-        raster_window = np.zeros(list(self.facade_raster.shape))
+    def getWindowIrradiance(self):
         for window in self.facade_windows:
+            raster_window = np.zeros(list(self.facade_raster.shape))
             p1 = Point(self.start)
             p2 = Point(window.win_start_xy)
             j = round(p1.distance(p2))
             i = self.height - window.win_height_top
             n = round(window.width)
             raster_window[i:i + window.height, j:j + n] = 1
-        self.facade_windows_raster = raster_window
+            irr = raster_window * self.facade_raster
+            out_arr = irr[np.nonzero(irr)]
+            irr = np.array(out_arr)
+            w_area = window.width * window.height
+            window.total_irradiance = irr.mean()
+            window.total_irradiance_per_m = fun.handleZeroDivision(window.total_irradiance, w_area)
 
 
 class Building:
@@ -175,7 +115,7 @@ class Building:
         self.corner_list = []
         self.facade_lines = []
         self.windows_geometry = []
-        self.raster_list = []
+        self.roof = 0
 
     def assignBuildingIndex(self, voxels):
         pointList = []
@@ -345,6 +285,7 @@ class Building:
                 elif voxel.voxel_id == end_v:
                     voxel.facade_end_corner = True
 
+
 class Roof:
     def __init__(self, fid):
         self.feature_index = fid
@@ -352,14 +293,16 @@ class Roof:
         self.total_irradiance = 0
         self.roof_type = 0
         self.roof_raw_geometry = 0
+        self.roof_area = 0
+        self.total_irradiance_per_m = 0
 
     def getRoofRawGeometry(self, building, city_model):
         semantics = building['geometry'][0]['semantics']
-        id = get_roof_id(semantics)
-        roof_b_ids = get_roof_bound_id(id, semantics['values'][0])
-        geom = get_roof_geom(roof_b_ids, building['geometry'][0]['boundaries'][0])
-        ver_list = get_all_vertices_list(city_model)
-        roof_geom_list = assign_ver_coords(geom, ver_list)
+        id = fun.get_roof_id(semantics)
+        roof_b_ids = fun.get_roof_bound_id(id, semantics['values'][0])
+        geom = fun.get_roof_geom(roof_b_ids, building['geometry'][0]['boundaries'][0])
+        ver_list = fun.get_all_vertices_list(city_model)
+        roof_geom_list = fun.assign_roof_ver_coords(geom, ver_list)
         self.roof_raw_geometry = roof_geom_list
 
     def getRoofPolygon(self):
@@ -370,6 +313,7 @@ class Roof:
                 poly_list.append(edge['ver_coords'])
             poly_list.append(poly_list[0])
             self.roof_geometry = [Polygon(poly_list)]
+            self.roof_area = Polygon(poly_list).area
         else:
             poly = []
             for roof_feature in self.roof_raw_geometry:
@@ -379,6 +323,8 @@ class Roof:
                 poly_list.append(poly_list[0])
                 poly.append(Polygon(poly_list))
             self.roof_geometry = poly
+            self.roof_area = Polygon(poly_list).area
+
 
     def extractRoofIrradiance(self, raster):
         raster_mask = mask.mask(raster, self.roof_geometry, crop=True)
@@ -387,7 +333,9 @@ class Roof:
             raster_values.append([x for x in raster_mask[0][0][i] if x > 0])
         raster_values = [x for x in raster_values if x]
         raster_values = list(chain(*raster_values))
-        self.total_irradiance = sum(raster_values)
+        raster_values = np.array(raster_values)
+        self.total_irradiance = np.sum(raster_values)
+        self.total_irradiance_per_m = fun.handleZeroDivision(self.total_irradiance,self.roof_area)
 
 
 class FacadeRaster(Facade):
@@ -489,7 +437,7 @@ class FacadeRaster(Facade):
             d = start.distance(voxel_loc)
             x = {'distance': d, 'data': voxel.voxel_data}
             dist_list.append(x)
-        dist_list.sort(key=my_fun)
+        dist_list.sort(key=fun.my_fun)
         return dist_list
 
     def adjust_position(self, dist_list):
@@ -530,7 +478,6 @@ class FacadeRaster(Facade):
             dist_list = self.adjust_position(dist_list)
             for i in range(len(dist_list)):
                 self.populate_vertical_values(dist_list[i]['data'], dist_list[i]['distance'])
-
 
     def create_foating_window(self, i, j, size):
         n = round(size/2)
@@ -573,18 +520,45 @@ class FacadeRaster(Facade):
                     submat = self.create_foating_window(i, j, 3)
                     self.grid[i][j] = self.getMeanValue(submat)
 
-    def storeRasterObject(self):
-        pass
 
-class OutputCityJSON:
+class Window:
 
-    def __init__(self, data):
-        self.metadata = {"geographicalExtent": [], "referenceSystem": 0}
-        self.type = "CityJSON"
-        self.version = "1.0"
-        self.cityObjects = {}
+    def __init__(self, geom, bid, id, bound_id):
+        self.geometry = geom
+        self.bid = bid
+        self.bound_id = bound_id
+        self.id = id
+        self.width = 0
+        self.height = 0
+        self.win_start_xy = [0,0]
+        self.win_end_xy = 0
+        self.win_height_top = 0
+        self.facade_id = None
+        self.valid = False
+        self.total_irradiance = 0
+        self.total_irradiance_per_m = 0
 
-    def printOut(self):
-        json_out = {"type": self.type, "version": self.version, "metadata": self.metadata}
+    def set_extent(self, facade):
+        i = 0
+        z_min = 999
+        z_max = 0
+        self.win_end_xy = facade.start
+        for geo_dict in self.geometry:
+            x,y,z = geo_dict['ver_coords']
+            if Point(facade.start).distance(Point([x,y])) < Point(facade.start).distance(Point(self.win_start_xy)):
+                self.win_start_xy = [x,y]
+            if Point(facade.start).distance(Point([x,y])) > Point(facade.start).distance(Point(self.win_end_xy)):
+                self.win_end_xy = [x,y]
+            if z > z_max:
+                z_max = z
+            if z < z_min:
+                z_min = z
+        self.width = Point(self.win_start_xy).distance(Point(self.win_end_xy))
+        self.height = z_max - z_min
+        self.win_height_top = z_max
+        self.valid = True
 
-
+    def assign_facade(self, facade, buffer):
+        if self.valid:
+            if Point(self.win_start_xy).within(buffer) and Point(self.win_end_xy).within(buffer):
+                self.facade_id = facade.facade_index

@@ -1,17 +1,97 @@
 '''
 ***********************************************************************************************************************
-*                                Functions file for extract windows module                                            *
+*                                Functions for solar estimation tool                                                  *
 *                                         Created by P.Nezval                                                         *
 *                                             version 0.1                                                             *
-*                                         May 2021 - July 2021                                                        *
+*                                         May 2021 - August 2021                                                      *
 ***********************************************************************************************************************
                                                 License:
-                                    Mozilla Public License Version 2.0
+                                               MIT License
                                     ==================================
 '''
 
-from shapely.geometry import Point
-import math
+
+from shapely.geometry import Polygon, Point, LineString
+
+
+def handleZeroDivision(x,y):
+    try:
+        return x/y
+    except ZeroDivisionError:
+        return 0
+
+
+def extract_footprints(obj_id, shapefile):
+    i = 0
+    coords = []
+    while len(coords) == 0:
+        if shapefile.fid[i] == obj_id:
+            x, y = shapefile.exterior[i].xy
+            j = 0
+            for j in range(len(x)):
+                coords.append([x[j], y[j]])
+        i += 1
+    return coords
+
+
+def get_roof_id(semantics):
+    for i in range(len(semantics['surfaces'])):
+        if semantics['surfaces'][i]['type'] == 'RoofSurface':
+            return i
+
+
+def get_roof_bound_id(id, val):
+    ids = []
+    for i in range(len(val)):
+        if val[i] == id:
+            ids.append(i)
+    return ids
+
+
+def get_roof_geom(ids, bound):
+    geom = []
+    for i in range(len(bound)):
+        if i in ids:
+            geom.append(bound[i][0])
+    return geom
+
+
+def get_all_vertices_list(data):
+    vertex = []
+    for i in range(len(data['vertices'])):
+        x = {'ver_id':i, 'ver_coords':data['vertices'][i]}
+        vertex.append(x)
+    return vertex
+
+
+def assign_roof_ver_coords(roof_geom, ver_list):
+    val_list = []
+    for dict in ver_list:
+        x = list(dict.values())[0]
+        val_list.append(x)
+    win_geom_list = []
+    for obj in roof_geom:
+        win_coord_list = []
+        for vertex in obj:
+            position = val_list.index(vertex)
+            win_coord_list.append(ver_list[position])
+        win_geom_list.append(win_coord_list)
+    return win_geom_list
+
+
+def create_buffer(point1, point2, buff_len):
+    line = LineString([Point(point1), Point(point2)])
+    left = line.parallel_offset(buff_len / 2, 'left')
+    right = line.parallel_offset(buff_len / 2, 'right')
+    p1 = left.boundary[1]
+    p2 = right.boundary[0]
+    p3 = right.boundary[1]
+    p4 = left.boundary[0]
+    return Polygon([p1, p2, p3, p4, p1])
+
+
+def my_fun(e):
+    return e['distance']
 
 
 def get_vertex_list(obj_build, data):
@@ -24,13 +104,6 @@ def get_vertex_list(obj_build, data):
                 vertex.append(x)
     return vertex
 
-
-def get_all_vertices_list(data):
-    vertex = []
-    for i in range(len(data['vertices'])):
-        x = {'ver_id':i, 'ver_coords':data['vertices'][i]}
-        vertex.append(x)
-    return vertex
 
 def extract_footprints_own(data, key):
     building = data['CityObjects'][key]
@@ -103,43 +176,25 @@ def get_win_from_json(building, data):
     geom = get_win_geom(win_b_ids, building['geometry'][0]['boundaries'][0])
     ver_list = get_all_vertices_list(data)
     win_geom_list = assign_ver_coords(geom, ver_list)
-    return win_geom_list
+    return win_geom_list, win_b_ids
 
-class Window:
 
-    def __init__(self, geom, bid, id):
-        self.geometry = geom
-        self.bid = bid
-        self.id = id
-        self.width = 0
-        self.height = 0
-        self.win_start_xy = [0,0]
-        self.win_end_xy = 0
-        self.win_height_top = 0
-        self.facade_id = None
-        self.valid = False
+def process_building(building, voxels):
+    building.getFacadeList()
+    building.assignBuildingIndex(voxels)
+    building.createCornerAreas()
+    building.assignFacadeIndex()
 
-    def set_extent(self, facade):
-        i = 0
-        z_min = 999
-        z_max = 0
-        self.win_end_xy = facade.start
-        for geo_dict in self.geometry:
-            x,y,z = geo_dict['ver_coords']
-            if Point(facade.start).distance(Point([x,y])) < Point(facade.start).distance(Point(self.win_start_xy)):
-                self.win_start_xy = [x,y]
-            if Point(facade.start).distance(Point([x,y])) > Point(facade.start).distance(Point(self.win_end_xy)):
-                self.win_end_xy = [x,y]
-            if z > z_max:
-                z_max = z
-            if z < z_min:
-                z_min = z
-        self.width = Point(self.win_start_xy).distance(Point(self.win_end_xy))
-        self.height = z_max - z_min
-        self.win_height_top = z_max
-        self.valid = True
+def process_roof(roof, feature, data, img):
+    roof.getRoofRawGeometry(feature, data)
+    roof.getRoofPolygon()
+    roof.extractRoofIrradiance(img)
 
-    def assign_facade(self, facade, buffer):
-        if self.valid:
-            if Point(self.win_start_xy).within(buffer) and Point(self.win_end_xy).within(buffer):
-                self.facade_id = facade.facade_index
+def process_fac_raster(facadeRaster, building, facade):
+    facadeRaster.getRasterDimension()
+    facadeRaster.getFacadeVoxelList(building)
+    facade.facade_voxel_list = facadeRaster.voxelList
+    facadeRaster.calculateLineCoords()
+    facadeRaster.populateGrid()
+    facadeRaster.interpolate()
+    facade.facade_raster = facadeRaster.grid
