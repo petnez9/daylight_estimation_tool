@@ -13,6 +13,7 @@
 import json
 import geopandas
 import pandas
+from shapely.geometry import Polygon
 
 
 ######################################################################################################################
@@ -22,9 +23,6 @@ def read_json(input_data):
         data = json.load(file)
     return data
 
-def read_geopandas(input_data):
-    shp = geopandas.read_file(input_data)
-    return shp
 
 def get_obj_ids(input_data):
     city_obj_id = []
@@ -64,46 +62,56 @@ def get_build_height(vert_list, heights):
     return height
 
 
-def print_build_height(input_data, oid, out_json):
-    out = {}
-    out['buildings'] = []
-    j = 0
+def get_footprint_vertex_list(building_bound, input_data):
+    footprints_ver = []
+    min_sum = 9999999
+    for polygon in building_bound:
+        sum_height = 0
+        n = 0
+        for vertex in polygon[0]:
+            n += 1
+            sum_height += input_data['vertices'][vertex][2]
+        sum_height = sum_height/n
+        if sum_height < min_sum:
+            min_sum = sum_height
+            footprints_ver = polygon[0]
+    return footprints_ver
+
+
+def extract_footprints_own(data, key):
+    building = data['CityObjects'][key]
+    bound_list = building['geometry'][0]['boundaries'][0]
+    foot_vertex_list = get_footprint_vertex_list(bound_list, data)
+    coordinates = []
+    for vertex in foot_vertex_list:
+        coordinates.append(data['vertices'][vertex][0:2])
+    return coordinates
+
+
+def create_foot_SHP(input_data, oid, out_shp):
+    out = out_shp
+    fid = []
+    heights = []
+    vid = []
     for i in oid:
+        fid.append(i)
         building = input_data['CityObjects'][i]
         ver_list = get_vertex_list(building)
         ver_heights = vertex_heights(input_data)
-        build_height = get_build_height(ver_list, ver_heights)
-        k = 'property_{}'.format(j)
-        x = {k: {'fid': i, 'height': build_height}}
-        out['buildings'].append(x)
-        j = j + 1
-    with open(out_json, 'w') as outfile:
-        json.dump(out, outfile)
-    return out
-
-def create_attr_table(input_data):
-    fids = []
-    heights = []
-    for i in range(len(input_data['buildings'])):
-        nm = 'property_{}'.format(i)
-        fids.append(input_data['buildings'][i][nm]['fid'])
-        heights.append(input_data['buildings'][i][nm]['height'])
-    dat = {'fid': fids, 'height': heights}
-    updated = pandas.DataFrame(dat)
-    return updated
+        heights.append(get_build_height(ver_list, ver_heights))
+        coords = extract_footprints_own(input_data, i)
+        x, y = [],[]
+        for pair in coords:
+            coor_x, coor_y = pair[0],pair[1]
+            x.append(coor_x)
+            y.append(coor_y)
+        vid.append(Polygon(zip(x, y)))
+    df = pandas.DataFrame({'id': fid, 'heights': heights})
+    gdf = geopandas.GeoDataFrame(df, geometry=vid)
+    gdf.to_file(out)
 
 
-def updateSHP(shape,attr):
-    updated = attr.merge(shape, on='fid')
-    gdf = geopandas.GeoDataFrame(updated, geometry=updated.geometry)
-    return gdf
-
-
-def main(input_json, output_json, input_shp, output):
+def main(input_json, output_shp):
     data = read_json(input_json)
     obj_id = get_obj_ids(data)
-    result = print_build_height(data, obj_id, output_json)
-    shp = read_geopandas(input_shp)
-    attr = create_attr_table(result)
-    shape = updateSHP(shp, attr)
-    shape.to_file(output)
+    create_foot_SHP(data, obj_id, output_shp)
