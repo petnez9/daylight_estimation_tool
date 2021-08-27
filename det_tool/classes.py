@@ -17,7 +17,7 @@ from itertools import chain
 from rasterio import mask
 from shapely.geometry import Polygon, Point, LineString, MultiPolygon
 import numpy as np
-from solar_est_tool import functions as fun
+from det_tool import functions as fun
 
 
 class InitialRaster:
@@ -78,12 +78,16 @@ class Facade:
         self.facade_voxel_list = []
         self.facade_windows = []
         self.facade_raster = []
+        self.area = Point(self.start).distance(Point(self.end)) * self.height
+        self.total_irradiance = 0
+        self.total_irradiance_per_m = 0
 
 
     def getFacadeWindows(self, building):
         for window in building.windows_geometry:
             if window.facade_id == self.facade_index:
-                self.facade_windows.append(window)
+                if window not in self.facade_windows:
+                    self.facade_windows.append(window)
 
     def getWindowIrradiance(self):
         for window in self.facade_windows:
@@ -97,10 +101,28 @@ class Facade:
             irr = raster_window * self.facade_raster
             out_arr = irr[np.nonzero(irr)]
             irr = np.array(out_arr)
-            w_area = window.width * window.height
-            window.total_irradiance = irr.mean()
-            window.total_irradiance_per_m = fun.handleZeroDivision(window.total_irradiance, w_area)
+            window.area = window.width * window.height
+            if irr.sum():
+                window.total_irradiance = irr.sum() * fun.handleZeroDivision(window.area, n * window.height)
+                window.total_irradiance_per_m = fun.handleZeroDivision(window.total_irradiance, window.area)
 
+
+    def getFacadeIrradiance(self):
+        if len(self.facade_windows) != 0:
+            raster_window = np.ones(list(self.facade_raster.shape))
+            for window in self.facade_windows:
+                p1 = Point(self.start)
+                p2 = Point(window.win_start_xy)
+                j = round(p1.distance(p2))
+                i = self.height - window.win_height_top
+                n = round(window.width)
+                raster_window[i:i + window.height, j:j + n] = 0
+            irr = raster_window * self.facade_raster
+            self.total_irradiance = irr.sum()
+            self.total_irradiance_per_m = fun.handleZeroDivision(self.total_irradiance, self.area)
+        else:
+            self.total_irradiance = self.facade_raster.sum()
+            self.total_irradiance_per_m = fun.handleZeroDivision(self.total_irradiance, self.area)
 
 class Building:
 
@@ -291,23 +313,22 @@ class Roof:
         self.feature_index = fid
         self.roof_geometry = Polygon()
         self.total_irradiance = 0
-        self.roof_type = 0
-        self.roof_raw_geometry = 0
+        self.roof_ver_geometry = 0
         self.roof_area = 0
         self.total_irradiance_per_m = 0
 
-    def getRoofRawGeometry(self, building, city_model):
+    def getRoofGeometry(self, building, city_model):
         semantics = building['geometry'][0]['semantics']
-        id = fun.get_roof_id(semantics)
-        roof_b_ids = fun.get_roof_bound_id(id, semantics['values'][0])
+        roof_id = fun.get_roof_id(semantics)
+        roof_b_ids = fun.get_roof_bound_id(roof_id, semantics['values'][0])
         geom = fun.get_roof_geom(roof_b_ids, building['geometry'][0]['boundaries'][0])
         ver_list = fun.get_all_vertices_list(city_model)
         roof_geom_list = fun.assign_roof_ver_coords(geom, ver_list)
-        self.roof_raw_geometry = roof_geom_list
+        self.roof_ver_geometry = roof_geom_list
 
     def getRoofPolygon(self):
-        if len(self.roof_raw_geometry) == 1:
-            roof_g_list = self.roof_raw_geometry[0]
+        if len(self.roof_ver_geometry) == 1:
+            roof_g_list = self.roof_ver_geometry[0]
             poly_list = []
             for edge in roof_g_list:
                 poly_list.append(edge['ver_coords'])
@@ -316,14 +337,15 @@ class Roof:
             self.roof_area = Polygon(poly_list).area
         else:
             poly = []
-            for roof_feature in self.roof_raw_geometry:
+            for roof_feature in self.roof_ver_geometry:
                 poly_list = []
                 for edge in roof_feature:
                     poly_list.append(edge['ver_coords'])
                 poly_list.append(poly_list[0])
                 poly.append(Polygon(poly_list))
             self.roof_geometry = poly
-            self.roof_area = Polygon(poly_list).area
+            for poly in self.roof_geometry:
+                self.roof_area += poly.area
 
 
     def extractRoofIrradiance(self, raster):
@@ -537,6 +559,7 @@ class Window:
         self.valid = False
         self.total_irradiance = 0
         self.total_irradiance_per_m = 0
+        self.suitability = 0
 
     def set_extent(self, facade):
         i = 0
