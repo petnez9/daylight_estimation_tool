@@ -1,6 +1,6 @@
 '''
 ***********************************************************************************************************************
-*                                Functions for solar estimation tool                                                  *
+*                                Functions for daylight estimation tool                                               *
 *                                         Created by P.Nezval                                                         *
 *                                             version 0.1                                                             *
 *                                         May 2021 - August 2021                                                      *
@@ -10,8 +10,12 @@
                                     ==================================
 '''
 
-
+from CityJSON_gen_upd import classes as ct_cls
+from matplotlib import pyplot as plt
 from shapely.geometry import Polygon, Point, LineString
+import json
+import numpy as np
+from pre_processor import functions as pfun
 
 
 def handleZeroDivision(x,y):
@@ -169,7 +173,7 @@ def assign_ver_coords(win_geom, ver_list):
     return win_geom_list
 
 
-def get_win_from_json(building, data):
+def extract_window_geometry(building, data):
     semantics = building['geometry'][0]['semantics']
     id = get_win_id(semantics)
     win_b_ids = get_win_bound_id(id, semantics['values'][0])
@@ -185,10 +189,12 @@ def process_building(building, voxels):
     building.createCornerAreas()
     building.assignFacadeIndex()
 
+
 def process_roof(roof, feature, data, img):
-    roof.getRoofRawGeometry(feature, data)
+    roof.getRoofGeometry(feature, data)
     roof.getRoofPolygon()
     roof.extractRoofIrradiance(img)
+
 
 def process_fac_raster(facadeRaster, building, facade):
     facadeRaster.getRasterDimension()
@@ -198,3 +204,81 @@ def process_fac_raster(facadeRaster, building, facade):
     facadeRaster.populateGrid()
     facadeRaster.interpolate()
     facade.facade_raster = facadeRaster.grid
+
+
+def process_window(win_obj, facade, building):
+    win_obj.set_extent(facade)
+    facade_win_buff = create_buffer(facade.start, facade.end, 1)
+    win_obj.assign_facade(facade, facade_win_buff)
+    if win_obj not in building.windows_geometry:
+        building.windows_geometry.append(win_obj)
+    facade.getFacadeWindows(building)
+    facade.getWindowIrradiance()
+
+
+def process_output(building, nm, data, matVal, semAttr):
+    matVal.populateMaterialValues(nm, building, data['CityObjects'][building.fid]['geometry'][0]['boundaries'][0])
+    data['CityObjects'][building.fid]['geometry'][0]['material'] = {'values': matVal.m_values}
+    val = data['CityObjects'][building.fid]['geometry'][0]['semantics']['values'][0]
+    #semAttr.populateSemanticValues(val)
+    semAttr.populateSemanticSurface(val)
+    #data['CityObjects'][building.fid]['geometry'][0]['semantics']['attributes'] = semAttr.attributes
+    data['CityObjects'][building.fid]['geometry'][0]['semantics']['surfaces'] = semAttr.surfaces
+    data['version'] = '1.0'
+    data['metadata']['referenceSystem'] = 'urn:ogc:def:crs:EPSG::3008'
+
+
+def update_CityJSON(build_obj_list, model_path, output_path, irr_values):
+    print("Data are being written to CityJSON ...")
+    data = pfun.read_json(model_path)
+    nm = ['irradiation1', 'irradiation2', 'irradiation3', 'irradiation4']
+    cl = [[0, 0, 0.5], [0.13, 0.55, 0.13], [0.93, 0.93, 0], [0.98, 0.11, 0.18]]
+    mat = ct_cls.Material(nm, cl)
+    mat.printEachMaterial()
+    data['appearance'] = {'materials': mat.materials}
+    irr_values = [x for x in irr_values if x > 0]
+    createHist(irr_values)
+    stat = makeStat(irr_values)
+    threshold = getInput(stat)
+    for building in build_obj_list:
+        matVal = ct_cls.MaterialValues(threshold)
+        semAttr = ct_cls.SemanticAttributes(building)
+        process_output(building, nm, data, matVal, semAttr)
+    with open(output_path, 'w') as jsonFile:
+        json.dump(data, jsonFile)
+
+
+def generate_report(build_obj_list, path):
+    report = ct_cls.ReportGenerator(build_obj_list)
+    report.print_report()
+    with open(path, 'w') as jsonFile:
+        json.dump(report.report, jsonFile)
+
+
+def getInput(stat):
+    print("Based on basic statistics: \nmax - {a}, min - {b}, avg - {c}\n"
+          "and histogram, choose your threshold values for windows irradiance suitability".format(a=stat[0],b=stat[1], c=stat[2]))
+    val1 = int(input("Threshold 1 - Not suitable (values less then this one are considered as not suitable)\n"
+                 "Enter the value:"))
+    val2 = int(input("Threshold 2 - Average suitability (values less then this one are considered as fairly suitable)\n"
+                 "Enter the value:"))
+    val3 = int(input("Threshold 3 - Good suitability (values less then this one are considered as well suitable),"
+                 "all values higher than this one are considered as highly suitable\n"
+                 "Enter the value:"))
+    return [val1, val2, val3]
+
+
+def createHist(irr_list):
+    irr_list = [x for x in irr_list if x > 0]
+    irr = np.array(irr_list)
+    plt.style.use('ggplot')
+    plt.title("Histogram of windows irradiance values;\nmax - {a}, min - {b}, avg - {c}".format(a=format(irr.max(),'.2f'),b=format(irr.min(), '.2f'),c=format(irr.mean(), '.2f')))
+    plt.hist(irr_list, bins=round(irr.max()/irr.min()))
+    plt.show()
+
+
+def makeStat(irr_list):
+    irr_list = [x for x in irr_list if x > 0]
+    irr = np.array(irr_list)
+    return [format(irr.max(), '.2f'), format(irr.min(), '.2f'), format(irr.mean(), '.2f')]
+
