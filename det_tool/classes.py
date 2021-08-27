@@ -126,7 +126,7 @@ class Facade:
 
 class Building:
 
-    def __init__(self, fid, bid, foot, height):
+    def __init__(self, fid, bid, foot, height, surf):
         self.fid = fid
         self.building_id = bid
         self.footprints = foot
@@ -138,6 +138,7 @@ class Building:
         self.facade_lines = []
         self.windows_geometry = []
         self.roof = 0
+        self.surfaces = surf
 
     def assignBuildingIndex(self, voxels):
         pointList = []
