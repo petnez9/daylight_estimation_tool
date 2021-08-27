@@ -53,7 +53,7 @@ def process(model_path, shp_path, raster_path, facade_file):
     i = 0
     for key in obj_id:
         print("Building {} in being processed ...\n".format(key))
-        building = cls.Building(key, i, fun.extract_footprints(key, shapefile_foot), int(shapefile_foot.height[i]))
+        building = cls.Building(key, i, fun.extract_footprints(key, shapefile_foot), int(shapefile_foot.height[i]), fun.get_surfaces_info(data, key))
         fun.process_building(building, voxels)
         for facade in building.facade_list:
             facadeRaster = cls.FacadeRaster(facade.feature_id, facade.height, facade.start, facade.end, facade.facade_index)

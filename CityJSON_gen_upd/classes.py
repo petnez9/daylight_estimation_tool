@@ -198,7 +198,7 @@ class MaterialValues:
                 window.suitability = "Well suitable"
             else:
                 val4[window.bound_id] = 3
-                #self.m_values[window.bound_id] = 3
+                self.m_values[window.bound_id] = 3
                 window.suitability = "Highly suitable"
         self.material['{}'.format(names[0])] = {'values': [val1]}
         self.material['{}'.format(names[1])] = {'values': [val2]}
@@ -214,13 +214,14 @@ class SemanticAttributes:
         self.surfaces = []
 
     def populateSemanticSurface(self, values):
+        surf_values = list(self.building.surfaces.keys())
         for i in range(len(values)):
-            if values[i] == 0:
+            if surf_values[values[i]] == 'RoofSurface':
                 self.surfaces.append({"type": "RoofSurface",
                                         "total_irradiance": float(self.building.roof.total_irradiance),
                                         "total_irradiance_per_area": float(self.building.roof.total_irradiance_per_m)})
 
-            elif values[i] == 1:
+            elif surf_values[values[i]] == 'Window':
                 win_not_found = True
                 for window in self.building.windows_geometry:
                     if i == window.bound_id:
@@ -231,15 +232,8 @@ class SemanticAttributes:
                 if win_not_found:
                     self.surfaces.append({"type": "Window"})
 
-            elif values[i] == 2:
-                self.surfaces.append({"type": "GroundSurface"})
-
-            elif values[i] == 3:
-                self.surfaces.append({"type": "WallSurface"})
-
-            elif values[i] == 4:
-                self.surfaces.append({"type": "Door"})
-
+            else:
+                self.surfaces.append({"type": surf_values[values[i]]})
 '''
     def populateSemanticValues(self, values):
         for i in range(len(values)):

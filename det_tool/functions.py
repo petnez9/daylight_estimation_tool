@@ -136,6 +136,16 @@ def get_footprint_vertex_list(building_bound, input_data):
     return footprints_ver
 
 
+def get_surfaces_info(data, key):
+    surf = data['CityObjects'][key]['geometry'][0]['semantics']['surfaces']
+    surface = {}
+    i = 0
+    for dict in surf:
+        surface[dict['type']] = {'index': i, 'json_type': dict}
+        i += 1
+    return surface
+
+
 def get_win_id(semantics):
     for i in range(len(semantics['surfaces'])):
         if semantics['surfaces'][i]['type'] == 'Window':
@@ -218,7 +228,7 @@ def process_window(win_obj, facade, building):
 
 def process_output(building, nm, data, matVal, semAttr):
     matVal.populateMaterialValues(nm, building, data['CityObjects'][building.fid]['geometry'][0]['boundaries'][0])
-    data['CityObjects'][building.fid]['geometry'][0]['material'] = {'values': matVal.m_values}
+    data['CityObjects'][building.fid]['geometry'][0]['material'] = matVal.material
     val = data['CityObjects'][building.fid]['geometry'][0]['semantics']['values'][0]
     #semAttr.populateSemanticValues(val)
     semAttr.populateSemanticSurface(val)
