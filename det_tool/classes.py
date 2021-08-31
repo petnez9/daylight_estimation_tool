@@ -29,6 +29,7 @@ class InitialRaster:
         self.rows = input_raster.shape[0]
         self.columns = input_raster.shape[1]
         self.CRS = 'EPSG:3008'
+        self.img_data = input_raster
 
 
 class Voxel:
@@ -40,10 +41,8 @@ class Voxel:
         self.voxel_data = voxel_data
         self.building_index = 'none'
         self.facade_index = 999
-        self.facade_start_corner = False
-        self.facade_end_corner = False
 
-    def defineCoordinates(self, init_raster):
+    def define_coordinates(self, init_raster):
         self.coord_x = init_raster.left + self.col_index * init_raster.resolution[0] - init_raster.resolution[0] / 2
         self.coord_y = init_raster.top - self.row_index * init_raster.resolution[1] + init_raster.resolution[1] / 2
 
@@ -55,7 +54,7 @@ class FacadeData:
         self.file_size = os.stat(path).st_size / 1000
         self.file_data = []
 
-    def processInput(self):
+    def process_input(self):
         with open(self.path) as f:
             facadeData = f.readlines()[1:]
             for line in facadeData:
@@ -285,30 +284,6 @@ class Building:
                 selected.append(voxel)
         return selected
 
-    def setVoxelCorners(self):
-        for i in range(len(self.facade_list)):
-            facade_voxels = self.getWallVoxelList(i)
-            start_v = 0
-            end_v = 0
-            start_dis = 999
-            end_dis = 999
-            for voxel in facade_voxels:
-                p1 = Point(voxel.coord_x, voxel.coord_y)
-                dist1 = p1.distance(Point(self.facade_list[i].start))
-                dist2 = p1.distance(Point(self.facade_list[i].end))
-                if dist1 < start_dis:
-                    start_dis = dist1
-                    start_v = voxel.voxel_id
-                if dist2 < end_dis:
-                    end_dis = dist2
-                    end_v = voxel.voxel_id
-            for voxel in facade_voxels:
-                if voxel.voxel_id == start_v:
-                    voxel.facade_start_corner = True
-                elif voxel.voxel_id == end_v:
-                    voxel.facade_end_corner = True
-
-
 class Roof:
     def __init__(self, fid):
         self.feature_index = fid
@@ -350,7 +325,7 @@ class Roof:
 
 
     def extractRoofIrradiance(self, raster):
-        raster_mask = mask.mask(raster, self.roof_geometry, crop=True)
+        raster_mask = mask.mask(raster.img_data, self.roof_geometry, crop=True)
         raster_values = []
         for i in range(len(raster_mask[0][0])):
             raster_values.append([x for x in raster_mask[0][0][i] if x > 0])

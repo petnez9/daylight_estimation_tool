@@ -230,16 +230,15 @@ def process_output(building, nm, data, matVal, semAttr):
     matVal.populateMaterialValues(nm, building, data['CityObjects'][building.fid]['geometry'][0]['boundaries'][0])
     data['CityObjects'][building.fid]['geometry'][0]['material'] = matVal.material
     val = data['CityObjects'][building.fid]['geometry'][0]['semantics']['values'][0]
-    #semAttr.populateSemanticValues(val)
+    semAttr.populateSemanticValues(val)
     semAttr.populateSemanticSurface(val)
-    #data['CityObjects'][building.fid]['geometry'][0]['semantics']['attributes'] = semAttr.attributes
+    data['CityObjects'][building.fid]['geometry'][0]['semantics']['values'] = semAttr.values
     data['CityObjects'][building.fid]['geometry'][0]['semantics']['surfaces'] = semAttr.surfaces
     data['version'] = '1.0'
     data['metadata']['referenceSystem'] = 'urn:ogc:def:crs:EPSG::3008'
 
 
-def update_CityJSON(build_obj_list, model_path, output_path, irr_values):
-    print("Data are being written to CityJSON ...")
+def update_CityModel(build_obj_list, model_path, output_path, irr_values):
     data = pfun.read_json(model_path)
     nm = ['irradiation1', 'irradiation2', 'irradiation3', 'irradiation4']
     cl = [[0, 0, 0.5], [0.13, 0.55, 0.13], [0.93, 0.93, 0], [0.98, 0.11, 0.18]]
@@ -250,6 +249,7 @@ def update_CityJSON(build_obj_list, model_path, output_path, irr_values):
     createHist(irr_values)
     stat = makeStat(irr_values)
     threshold = getInput(stat)
+    print("Data are being written to CityJSON ...")
     for building in build_obj_list:
         matVal = ct_cls.MaterialValues(threshold)
         semAttr = ct_cls.SemanticAttributes(building)
@@ -282,7 +282,8 @@ def createHist(irr_list):
     irr_list = [x for x in irr_list if x > 0]
     irr = np.array(irr_list)
     plt.style.use('ggplot')
-    plt.title("Histogram of windows irradiance values;\nmax - {a}, min - {b}, avg - {c}".format(a=format(irr.max(),'.2f'),b=format(irr.min(), '.2f'),c=format(irr.mean(), '.2f')))
+    plt.title("Histogram of windows irradiance values;\nmax - {a}, min - {b}, average - {c}"
+              .format(a=format(irr.max(),'.2f'),b=format(irr.min(), '.2f'), c=format(irr.mean(), '.2f')))
     plt.hist(irr_list, bins=round(irr.max()/irr.min()))
     plt.show()
 
