@@ -210,7 +210,7 @@ class SemanticAttributes:
 
     def __init__(self, building):
         self.building = building
-        self.attributes = []
+        self.values = []
         self.surfaces = []
 
     def populateSemanticSurface(self, values):
@@ -234,24 +234,9 @@ class SemanticAttributes:
 
             else:
                 self.surfaces.append({"type": surf_values[values[i]]})
-'''
+
     def populateSemanticValues(self, values):
-        for i in range(len(values)):
-            if values[i] == 0:
-                self.attributes.append({"attributes": { "total_irradiance": float(self.building.roof.total_irradiance),
-                                                        "total_irradiance_per_area": float(self.building.roof.total_irradiance_per_m)}})
-            elif values[i] == 1:
-                for window in self.building.windows_geometry:
-                    if i == window.bound_id:
-                        self.attributes.append({"attributes": {"total_irradiance": float(window.total_irradiance),
-                                                               "total_irradiance_per_area": float(window.total_irradiance_per_m)}})
-            elif values[i] == 2:
-                self.attributes.append(None)
-            elif values[i] == 3:
-                self.attributes.append(None)
-            elif values[i] == 4:
-                self.attributes.append(None)
-'''
+        self.values.append(list(range(len(values))))
 
 
 class ReportGenerator:

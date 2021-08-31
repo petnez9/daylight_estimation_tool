@@ -11,19 +11,19 @@
 '''
 
 ### here comes the path to 3D city model including windows features
-cityModel_path = 'data2/win_lund3008_red.json'
+cityModel_path = 'data/win_lund3008_red.json'
 
 ### here comes the path to shapefile with footprints and height attributes
-foot_height_shp = "data2/ft_height.shp"
+foot_height_shp = "data/ft_height.shp"
 
 ### here comes the path to roof raster (one of the outputs of UMEP)
-roof_raster = 'data2/Energyyearroof.tif'
+roof_raster = 'data/Energyyearroof.tif'
 
 ### here comes the path to the text file with energy values on the facades
-facade_solar_energy = 'data2/Energyyearwall.txt'
+facade_solar_energy = 'data/Energyyearwall.txt'
 
 ### here comes the path to the updated CityJSON
-updated_JSON = 'data2/city_windows_check.json'
+updated_JSON = 'data/city_windows.json'
 
 ### here comes the path to the report
-report_path = 'report.json'
+report_path = 'report2.json'
