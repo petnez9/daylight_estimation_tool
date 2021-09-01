@@ -93,12 +93,12 @@ def process(model_path, shp_path, raster_path, facade_file):
     for building in build_obj_list:
         for window in building.windows_geometry:
             build_irr_values.append(window.total_irradiance)
-    return build_obj_list, build_irr_values, stat_data
+    return build_obj_list, build_irr_values
 
 
 def main():
     start = dt.datetime.now()
-    build_obj_list, irr_values, stat = process(cityModel_path, foot_height_shp, roof_raster, facade_solar_energy)
+    build_obj_list, irr_values = process(cityModel_path, foot_height_shp, roof_raster, facade_solar_energy)
     process_end = dt.datetime.now()
     fun.update_CityModel(build_obj_list, cityModel_path, updated_JSON, irr_values)
     fun.generate_report(build_obj_list, report_path)

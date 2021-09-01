@@ -9,6 +9,143 @@
                                                MIT License
                                     ==================================
 '''
+class Material:
+
+    def __init__(self, names, color_arrays):
+        self.name = names
+        self.ambientIntensity = 0.2000
+        self.diffuseColor = color_arrays
+        self.materials = []
+
+    def printEachMaterial(self):
+        for i in range(len(self.name)):
+            object_out = {"name": self.name[i],
+                          "ambientIntensity": self.ambientIntensity,
+                          "diffuseColor": self.diffuseColor[i]}
+            self.materials.append(object_out)
+
+
+class MaterialValues:
+
+    def __init__(self, threshold):
+        self.material = {}
+        self.m_values = []
+        self.threshold = threshold
+
+    def populateMaterialValues(self, names, building, bound):
+        val1, val2, val3, val4 = [], [], [], []
+        val1.extend([None] * len(bound))
+        val2.extend([None] * len(bound))
+        val3.extend([None] * len(bound))
+        val4.extend([None] * len(bound))
+        self.m_values.extend([None] * len(bound))
+        for window in building.windows_geometry:
+            if window.total_irradiance < self.threshold[0]:
+                val1[window.bound_id] = 0
+                self.m_values[window.bound_id] = 0
+                window.suitability = "Not suitable"
+            elif window.total_irradiance > self.threshold[0] and window.total_irradiance < self.threshold[1]:
+                val2[window.bound_id] = 1
+                self.m_values[window.bound_id] = 1
+                window.suitability = "Fairly suitable"
+            elif window.total_irradiance > self.threshold[1] and window.total_irradiance < self.threshold[2]:
+                val3[window.bound_id] = 2
+                self.m_values[window.bound_id] = 2
+                window.suitability = "Well suitable"
+            else:
+                val4[window.bound_id] = 3
+                self.m_values[window.bound_id] = 3
+                window.suitability = "Highly suitable"
+        self.material['{}'.format(names[0])] = {'values': [val1]}
+        self.material['{}'.format(names[1])] = {'values': [val2]}
+        self.material['{}'.format(names[2])] = {'values': [val3]}
+        self.material['{}'.format(names[3])] = {'values': [val4]}
+
+
+class SemanticAttributes:
+
+    def __init__(self, building):
+        self.building = building
+        self.values = []
+        self.surfaces = []
+
+    def populateSemanticSurface(self, values):
+        surf_values = list(self.building.surfaces.keys())
+        for i in range(len(values)):
+            if surf_values[values[i]] == 'RoofSurface':
+                self.surfaces.append({"type": "RoofSurface",
+                                        "total_irradiance": float(self.building.roof.total_irradiance),
+                                        "total_irradiance_per_area": float(self.building.roof.total_irradiance_per_m)})
+
+            elif surf_values[values[i]] == 'Window':
+                win_not_found = True
+                for window in self.building.windows_geometry:
+                    if i == window.bound_id:
+                        win_not_found = False
+                        self.surfaces.append({"type": "Window",
+                                              "total_irradiance": float(window.total_irradiance),
+                                              "total_irradiance_per_area": float(window.total_irradiance_per_m)})
+                if win_not_found:
+                    self.surfaces.append({"type": "Window"})
+
+            else:
+                self.surfaces.append({"type": surf_values[values[i]]})
+
+    def populateSemanticValues(self, values):
+        self.values.append(list(range(len(values))))
+
+
+class ReportGenerator:
+
+    def __init__(self, build_list):
+        self.report = {}
+        self.build_list = build_list
+
+    def print_report(self):
+        buil_list = []
+        for building in self.build_list:
+            buil_list.append(self.print_building(building))
+        self.report = {'CityObjects': buil_list}
+
+    def print_building(self, building):
+        entry = {'facades': self.print_facades(building.facade_list),
+                 'roof': self.print_roof(building.roof),
+                 'windows': self.print_windows(building.windows_geometry)}
+        return {'Building': building.fid, 'building_data': entry}
+
+    def print_facades(self, facade_list):
+        fac_list = []
+        for facade in facade_list:
+            if facade.total_irradiance > 0:
+                entry = {'facade_id': facade.facade_index,
+                         'facade_area': float(facade.area),
+                         'facade_total_irradiance': float(facade.total_irradiance),
+                         'facade_total_irradiance_per_area': float(facade.total_irradiance_per_m)}
+                fac_list.append(entry)
+        return fac_list
+
+    def print_roof(self, roof):
+        if roof.total_irradiance > 0:
+            entry = {'Roof_area': float(roof.roof_area),
+                     'roof_total_irradiance': float(roof.total_irradiance),
+                     'roof_total_irradiance_per_area': float(roof.total_irradiance_per_m)}
+        return entry
+
+    def print_windows(self, windows):
+        win_list = []
+        for window in windows:
+            if window.total_irradiance > 0:
+                entry = {'window_id': window.id,
+                         'window_area': float(window.height * window.width),
+                         'window_total_irradiance': float(window.total_irradiance),
+                         'window_total_irradiance_per_area': float(window.total_irradiance_per_m),
+                         'window_suitability': window.suitability}
+                win_list.append(entry)
+        return win_list
+
+''' This part of the code is still in development. The idea was to generate brand new cityJSON file with an improved
+ geometry of features. However, the planarity of surfaces could not have been garanteed so I did not include this to
+  the project'''
 
 class OutputCityJSON:
 
@@ -36,11 +173,11 @@ class OutputCityJSON:
         z = [x[2] for x in self.vertices]
         self.metadata["geographicalExtent"] = [
             max(x),
-            6175671.146770532,
-            0,
-            130297.167365228,
-            6176468.73581959,
-            50
+            max(y),
+            max(z),
+            min(x),
+            min(y),
+            min(z)
         ]
 
     def printOut(self):
@@ -151,135 +288,3 @@ class geometry:
                       "material": self.material,
                       "lod": self.lod}
         return object_out
-
-
-class Material:
-
-    def __init__(self, names, color_arrays):
-        self.name = names
-        self.ambientIntensity = 0.2000
-        self.diffuseColor = color_arrays
-        self.materials = []
-
-    def printEachMaterial(self):
-        for i in range(len(self.name)):
-            object_out = {"name": self.name[i],
-                          "ambientIntensity": self.ambientIntensity,
-                          "diffuseColor": self.diffuseColor[i]}
-            self.materials.append(object_out)
-
-
-class MaterialValues:
-
-    def __init__(self, threshold):
-        self.material = {}
-        self.m_values = []
-        self.threshold = threshold
-
-    def populateMaterialValues(self, names, building, bound):
-        val1, val2, val3, val4 = [], [], [], []
-        val1.extend([None] * len(bound))
-        val2.extend([None] * len(bound))
-        val3.extend([None] * len(bound))
-        val4.extend([None] * len(bound))
-        self.m_values.extend([None] * len(bound))
-        for window in building.windows_geometry:
-            if window.total_irradiance < self.threshold[0]:
-                val1[window.bound_id] = 0
-                self.m_values[window.bound_id] = 0
-                window.suitability = "Not suitable"
-            elif window.total_irradiance > self.threshold[0] and window.total_irradiance < self.threshold[1]:
-                val2[window.bound_id] = 1
-                self.m_values[window.bound_id] = 1
-                window.suitability = "Fairly suitable"
-            elif window.total_irradiance > self.threshold[1] and window.total_irradiance < self.threshold[2]:
-                val3[window.bound_id] = 2
-                self.m_values[window.bound_id] = 2
-                window.suitability = "Well suitable"
-            else:
-                val4[window.bound_id] = 3
-                self.m_values[window.bound_id] = 3
-                window.suitability = "Highly suitable"
-        self.material['{}'.format(names[0])] = {'values': [val1]}
-        self.material['{}'.format(names[1])] = {'values': [val2]}
-        self.material['{}'.format(names[2])] = {'values': [val3]}
-        self.material['{}'.format(names[3])] = {'values': [val4]}
-
-
-class SemanticAttributes:
-
-    def __init__(self, building):
-        self.building = building
-        self.values = []
-        self.surfaces = []
-
-    def populateSemanticSurface(self, values):
-        surf_values = list(self.building.surfaces.keys())
-        for i in range(len(values)):
-            if surf_values[values[i]] == 'RoofSurface':
-                self.surfaces.append({"type": "RoofSurface",
-                                        "total_irradiance": float(self.building.roof.total_irradiance),
-                                        "total_irradiance_per_area": float(self.building.roof.total_irradiance_per_m)})
-
-            elif surf_values[values[i]] == 'Window':
-                win_not_found = True
-                for window in self.building.windows_geometry:
-                    if i == window.bound_id:
-                        win_not_found = False
-                        self.surfaces.append({"type": "Window",
-                                              "total_irradiance": float(window.total_irradiance),
-                                              "total_irradiance_per_area": float(window.total_irradiance_per_m)})
-                if win_not_found:
-                    self.surfaces.append({"type": "Window"})
-
-            else:
-                self.surfaces.append({"type": surf_values[values[i]]})
-
-    def populateSemanticValues(self, values):
-        self.values.append(list(range(len(values))))
-
-
-class ReportGenerator:
-
-    def __init__(self, build_list):
-        self.report = {}
-        self.build_list = build_list
-
-    def print_report(self):
-        buil_list = []
-        for building in self.build_list:
-            buil_list.append(self.print_building(building))
-        self.report = {'CityObjects': buil_list}
-
-    def print_building(self, building):
-        entry = {'facades': self.print_facades(building.facade_list),
-                 'roof': self.print_roof(building.roof),
-                 'windows': self.print_windows(building.windows_geometry)}
-        return {'Building': building.fid, 'building_data': entry}
-
-    def print_facades(self, facade_list):
-        fac_list = []
-        for facade in facade_list:
-            entry = {'facade_id': facade.facade_index,
-                     'facade_area': float(facade.area),
-                     'facade_total_irradiance': float(facade.total_irradiance),
-                     'facade_total_irradiance_per_area': float(facade.total_irradiance_per_m)}
-            fac_list.append(entry)
-        return fac_list
-
-    def print_roof(self, roof):
-        entry = {'Roof_area': float(roof.roof_area),
-                 'roof_total_irradiance': float(roof.total_irradiance),
-                 'roof_total_irradiance_per_area': float(roof.total_irradiance_per_m)}
-        return entry
-
-    def print_windows(self, windows):
-        win_list = []
-        for window in windows:
-            entry = {'window_id': window.id,
-                     'window_area': float(window.height * window.width),
-                     'window_total_irradiance': float(window.total_irradiance),
-                     'window_total_irradiance_per_area': float(window.total_irradiance_per_m),
-                     'window_suitability': window.suitability}
-            win_list.append(entry)
-        return win_list
