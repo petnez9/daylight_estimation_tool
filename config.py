@@ -11,7 +11,7 @@
 '''
 
 ### here comes the path to 3D city model including windows features
-cityModel_path = 'data/win_lund3008_red.json'
+cityModel_path = 'data/win_lund3008_sample.json'
 
 ### here comes the path to shapefile with footprints and height attributes
 foot_height_shp = "data/ft_height.shp"
