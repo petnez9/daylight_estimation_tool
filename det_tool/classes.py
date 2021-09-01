@@ -94,7 +94,7 @@ class Facade:
             p1 = Point(self.start)
             p2 = Point(window.win_start_xy)
             j = round(p1.distance(p2))
-            i = self.height - window.win_height_top
+            i = self.height - window.win_height_bottom
             n = round(window.width)
             raster_window[i:i + window.height, j:j + n] = 1
             irr = raster_window * self.facade_raster
@@ -113,9 +113,9 @@ class Facade:
                 p1 = Point(self.start)
                 p2 = Point(window.win_start_xy)
                 j = round(p1.distance(p2))
-                i = self.height - window.win_height_top
+                i = self.height - window.win_height_bottom
                 n = round(window.width)
-                raster_window[i:i + window.height, j:j + n] = 0
+                raster_window[i:i - window.height, j:j + n] = 0
             irr = raster_window * self.facade_raster
             self.total_irradiance = irr.sum()
             self.total_irradiance_per_m = fun.handleZeroDivision(self.total_irradiance, self.area)
@@ -306,8 +306,8 @@ class Roof:
         if len(self.roof_ver_geometry) == 1:
             roof_g_list = self.roof_ver_geometry[0]
             poly_list = []
-            for edge in roof_g_list:
-                poly_list.append(edge['ver_coords'])
+            for vertex in roof_g_list:
+                poly_list.append(vertex['ver_coords'])
             poly_list.append(poly_list[0])
             self.roof_geometry = [Polygon(poly_list)]
             self.roof_area = Polygon(poly_list).area
@@ -315,8 +315,8 @@ class Roof:
             poly = []
             for roof_feature in self.roof_ver_geometry:
                 poly_list = []
-                for edge in roof_feature:
-                    poly_list.append(edge['ver_coords'])
+                for vertex in roof_feature:
+                    poly_list.append(vertex['ver_coords'])
                 poly_list.append(poly_list[0])
                 poly.append(Polygon(poly_list))
             self.roof_geometry = poly
@@ -341,7 +341,6 @@ class FacadeRaster(Facade):
     def __init__(self, fid, height, start, end, fac_id):
         Facade.__init__(self, fid, height, start, end, fac_id)
         self.voxelList = []
-        self.spatial_reference = {}
         self.columns = 0
         self.rows = 0
         self.resolution = 1
@@ -530,7 +529,7 @@ class Window:
         self.height = 0
         self.win_start_xy = [0,0]
         self.win_end_xy = 0
-        self.win_height_top = 0
+        self.win_height_bottom = 0
         self.facade_id = None
         self.valid = False
         self.total_irradiance = 0
@@ -538,7 +537,6 @@ class Window:
         self.suitability = 0
 
     def set_extent(self, facade):
-        i = 0
         z_min = 999
         z_max = 0
         self.win_end_xy = facade.start
@@ -554,7 +552,7 @@ class Window:
                 z_min = z
         self.width = Point(self.win_start_xy).distance(Point(self.win_end_xy))
         self.height = z_max - z_min
-        self.win_height_top = z_max
+        self.win_height_bottom = z_min
         self.valid = True
 
     def assign_facade(self, facade, buffer):
