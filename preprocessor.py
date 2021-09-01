@@ -25,7 +25,7 @@ if __name__ == "__main__":
     if arg[0] == '--help':
         print('Thank you for using the urban solar energy modelling tool v0.0.1 - preprocessor\n\n'
               'Usage of the tool is as following:\n'
-              '<script_name>.py <path_to_cityJSON_input_file>.json <path_to_output_shapefile>.shp')
+              'preprocessor.py <path_to_cityJSON_input_file>.json <path_to_output_shapefile>.shp')
     else:
         if len(arg) == 2:
             fun.main(arg[0], arg[1])
