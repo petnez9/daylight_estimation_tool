@@ -59,4 +59,4 @@ Follow instructions in the CLI and the tool will create the outputs based on the
 
 More details about the entire project can be found in:
 
-Nezval, P. 2021. Design, implementation, and evaluation of a daylight estimation tool using 3D city model data. Lund University (Master Thesis)
+Nezval,  P.,  2021:  Design,  implementation  and  evaluation  of  a daylight  estimation  tool  using  3D  city  model  data.  MSc  thesis, Department  of  Physical  Geography  and  Ecosystem  Science, Lund University, Manuscript. 
